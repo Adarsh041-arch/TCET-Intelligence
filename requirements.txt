@@ -1,0 +1,16 @@
+fastapi
+uvicorn
+pydantic
+pydantic-settings
+chromadb
+sentence-transformers
+ollama
+python-docx
+PyPDF2
+python-dotenv
+passlib
+pyjwt
+aiofiles
+streamlit
+requests
+langgraph

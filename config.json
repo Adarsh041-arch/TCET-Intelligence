@@ -1,0 +1,17 @@
+{
+    "project_name": "TCET Chatbot",
+    "version": "1.0.0",
+    "ollama_base_url": "http://localhost:11434",
+    "llm_model": "qwen2.5:3b",
+    "embedding_model": "BAAI/bge-m3",
+    "chroma_persist_directory": "data/chroma",
+    "upload_directory": "data/uploads",
+    "database_url": "data/chatbot.db",
+    "chunk_size": 500,
+    "chunk_overlap": 50,
+    "top_k": 5,
+    "similarity_threshold": 0.4,
+    "admin_username": "admin",
+    "admin_password": "admin123",
+    "secret_key": "your-secret-key-change-in-production"
+}
