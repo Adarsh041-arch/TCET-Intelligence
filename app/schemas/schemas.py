@@ -36,11 +36,14 @@ class SessionResponse(BaseModel):
 class MessageRequest(BaseModel):
     session_id: str
     message: str = Field(..., min_length=1)
+    attached_files: Optional[List[str]] = []
+    mode: Optional[str] = None
 
 
 class MessageResponse(BaseModel):
     response: str
     source: str
+    response_time: Optional[float] = 0.0
     retrieved_docs: List[dict] = []
 
 
@@ -66,6 +69,25 @@ class ChatHistoryItem(BaseModel):
     content: str
     created_at: str
 
+
+class ApiKeySaveRequest(BaseModel):
+    api_key: str = Field(..., min_length=1)
+    provider: str = Field(default="tavily")
+
+class ApiKeyStatusResponse(BaseModel):
+    has_key: bool
+    provider: str = "tavily"
+
+class DirectoryAddRequest(BaseModel):
+    directory_path: str = Field(..., min_length=1)
+
+class DirectoryInfo(BaseModel):
+    id: int
+    directory_path: str
+    created_at: Optional[str] = None
+
+class UserDirectoriesResponse(BaseModel):
+    directories: List[DirectoryInfo] = []
 
 class HealthResponse(BaseModel):
     status: str

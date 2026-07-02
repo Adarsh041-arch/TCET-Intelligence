@@ -29,7 +29,6 @@ class VectorStore:
             try:
                 self._collection = self.client.get_collection(name=self.collection_name)
             except Exception:
-                embedding_dim = embedding_service.get_embedding_dimension()
                 self._collection = self.client.create_collection(
                     name=self.collection_name,
                     metadata={"hnsw:space": "cosine"},
@@ -55,7 +54,8 @@ class VectorStore:
             return False
 
     def retrieve_similar(
-        self, query: str, top_k: Optional[int] = None, threshold: Optional[float] = None
+        self, query: str, top_k: Optional[int] = None, threshold: Optional[float] = None,
+        filter_dict: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
         try:
             k = top_k or config.top_k
@@ -63,11 +63,15 @@ class VectorStore:
 
             query_embedding = embedding_service.embed_text(query)
 
-            results = self.collection.query(
-                query_embeddings=[query_embedding],
-                n_results=k,
-                include=["documents", "metadatas", "distances"],
-            )
+            kwargs = {
+                "query_embeddings": [query_embedding],
+                "n_results": k,
+                "include": ["documents", "metadatas", "distances"],
+            }
+            if filter_dict:
+                kwargs["where"] = filter_dict
+                
+            results = self.collection.query(**kwargs)
 
             docs = []
             if results["documents"] and len(results["documents"]) > 0:

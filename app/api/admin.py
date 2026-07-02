@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.schemas import DocumentUploadResponse, DocumentInfo
 from app.services.auth import decode_token
+from app.api.routes import get_current_user
 from app.documents.processor import document_processor
 from app.services.vector_store import vector_store
 from app.models.database import db
@@ -45,7 +46,7 @@ MAX_FILE_SIZE = 10 * 1024 * 1024
 
 @router.post("/documents/upload", response_model=DocumentUploadResponse)
 async def upload_document(
-    file: UploadFile = File(...), current_user: dict = Depends(get_admin_user)
+    file: UploadFile = File(...), current_user: dict = Depends(get_current_user)
 ):
     if not file.filename:
         raise HTTPException(
@@ -91,7 +92,7 @@ async def upload_document(
 
 
 @router.get("/documents")
-async def list_documents(current_user: dict = Depends(get_admin_user)):
+async def list_documents(current_user: dict = Depends(get_current_user)):
     documents = db.get_all_documents()
     count = vector_store.get_document_count()
     return {

@@ -1,3 +1,4 @@
+import os
 import sqlite3
 from datetime import datetime
 from typing import Optional, List, Dict, Any
@@ -44,6 +45,26 @@ class Database:
                     content TEXT NOT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (session_id) REFERENCES sessions(session_id)
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS user_api_keys (
+                    user_id TEXT NOT NULL,
+                    provider TEXT NOT NULL DEFAULT 'tavily',
+                    api_key TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (user_id, provider),
+                    FOREIGN KEY (user_id) REFERENCES users(user_id)
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS user_allowed_directories (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL,
+                    directory_path TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(user_id),
+                    UNIQUE(user_id, directory_path)
                 )
             """)
             cursor.execute("""
@@ -248,6 +269,86 @@ class Database:
             cursor.execute("DELETE FROM documents WHERE doc_id = ?", (doc_id,))
             conn.commit()
             return cursor.rowcount > 0
+
+    def set_api_key(self, user_id: str, provider: str, api_key: str) -> bool:
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "INSERT OR REPLACE INTO user_api_keys (user_id, provider, api_key) VALUES (?, ?, ?)",
+                    (user_id, provider, api_key),
+                )
+                conn.commit()
+            return True
+        except Exception:
+            return False
+
+    def get_api_key(self, user_id: str, provider: str = "tavily") -> Optional[str]:
+        cursor = self._get_connection().cursor()
+        cursor.execute(
+            "SELECT api_key FROM user_api_keys WHERE user_id = ? AND provider = ?",
+            (user_id, provider),
+        )
+        row = cursor.fetchone()
+        return row[0] if row else None
+
+    def delete_api_key(self, user_id: str, provider: str = "tavily") -> bool:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM user_api_keys WHERE user_id = ? AND provider = ?",
+                (user_id, provider),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    # ── User Allowed Directories ──────────────────────────────
+    def add_user_directory(self, user_id: str, directory_path: str) -> bool:
+        try:
+            normalized = os.path.normpath(directory_path)
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "INSERT OR IGNORE INTO user_allowed_directories (user_id, directory_path) VALUES (?, ?)",
+                    (user_id, normalized),
+                )
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception:
+            return False
+
+    def get_user_directories(self, user_id: str) -> List[str]:
+        cursor = self._get_connection().cursor()
+        cursor.execute(
+            "SELECT directory_path FROM user_allowed_directories WHERE user_id = ? ORDER BY id",
+            (user_id,),
+        )
+        return [row[0] for row in cursor.fetchall()]
+
+    def delete_user_directory(self, user_id: str, directory_path: str) -> bool:
+        try:
+            normalized = os.path.normpath(directory_path)
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "DELETE FROM user_allowed_directories WHERE user_id = ? AND directory_path = ?",
+                    (user_id, normalized),
+                )
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception:
+            return False
+
+    def get_user_directory_list(self, user_id: str) -> List[Dict[str, Any]]:
+        cursor = self._get_connection().cursor()
+        cursor.execute(
+            "SELECT id, directory_path, created_at FROM user_allowed_directories WHERE user_id = ? ORDER BY id",
+            (user_id,),
+        )
+        return [
+            {"id": row[0], "directory_path": row[1], "created_at": row[2]}
+            for row in cursor.fetchall()
+        ]
 
 
 db = Database()

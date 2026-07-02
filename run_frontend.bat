@@ -9,4 +9,4 @@ if exist venv\Scripts\activate.bat (
 echo Frontend will be available at: http://localhost:8501
 echo.
 
-streamlit run streamlit_app.py --server.port 8501
+cd frontend && npm run dev

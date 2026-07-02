@@ -16,7 +16,7 @@ echo Services Started!
 echo ========================================
 echo Backend API: http://localhost:8000
 echo API Docs: http://localhost:8000/docs
-echo Frontend: http://localhost:8501
+echo Frontend: http://localhost:5173
 echo.
 echo Default Admin: admin / admin123
 echo ========================================

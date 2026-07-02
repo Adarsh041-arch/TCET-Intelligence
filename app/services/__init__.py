@@ -3,3 +3,4 @@ from .embeddings import embedding_service, EmbeddingService
 from .vector_store import vector_store, VectorStore
 from .llm import llm_service, LLMService
 from .chat import chat_service, ChatService
+from .web_search import web_search_service, WebSearchService

@@ -7,11 +7,9 @@ from app.services.llm import llm_service
 
 class ChatService:
     def __init__(self):
-        self.max_history = 50
+        self.max_history = 10  # was 50
 
-    def create_session(
-        self, user_id: str, session_name: Optional[str] = None
-    ) -> Dict[str, Any]:
+    def create_session(self, user_id: str, session_name: Optional[str] = None) -> Dict[str, Any]:
         session_id = str(uuid.uuid4())
         db.create_session(session_id, user_id, session_name)
         return {"session_id": session_id, "message": "Session created successfully"}
@@ -22,9 +20,7 @@ class ChatService:
     def get_session_history(self, session_id: str) -> List[Dict[str, Any]]:
         return db.get_session_messages(session_id)
 
-    def process_message(
-        self, session_id: str, user_id: str, message: str
-    ) -> Dict[str, Any]:
+    def process_message(self, session_id: str, user_id: str, message: str) -> Dict[str, Any]:
         session = db.get_session(session_id)
         if not session or session["user_id"] != user_id:
             return {"error": "Session not found or access denied"}
@@ -32,7 +28,7 @@ class ChatService:
         chat_history = self.get_session_history(session_id)
         chat_history_formatted = [
             {"role": msg["role"], "content": msg["content"]}
-            for msg in chat_history[-self.max_history :]
+            for msg in chat_history[-self.max_history:]
         ]
 
         retrieved_docs = vector_store.retrieve_similar(message)
@@ -40,7 +36,7 @@ class ChatService:
         if retrieved_docs:
             response = llm_service.generate_rag_response(
                 query=message,
-                retrieved_docs=retrieved_docs,
+                retrieved_docs=retrieved_docs[:3],
                 chat_history=chat_history_formatted,
             )
             source = "rag"
@@ -59,9 +55,7 @@ class ChatService:
             "source": source,
             "retrieved_docs": [
                 {
-                    "content": doc["content"][:200] + "..."
-                    if len(doc["content"]) > 200
-                    else doc["content"],
+                    "content": doc["content"][:200] + "..." if len(doc["content"]) > 200 else doc["content"],
                     "filename": doc["metadata"].get("filename", "Unknown"),
                     "similarity": round(doc["similarity"], 3),
                 }
@@ -78,29 +72,28 @@ class ChatService:
         chat_history = self.get_session_history(session_id)
         chat_history_formatted = [
             {"role": msg["role"], "content": msg["content"]}
-            for msg in chat_history[-self.max_history :]
+            for msg in chat_history[-self.max_history:]
         ]
 
         retrieved_docs = vector_store.retrieve_similar(message)
+        full_response = ""
 
         if retrieved_docs:
-            context = "\n\n".join(
-                [
-                    f"Document {i + 1}:\n{doc['content']}"
-                    for i, doc in enumerate(retrieved_docs)
-                ]
-            )
             source = "rag"
+            for chunk in llm_service.generate_rag_response_stream(
+                query=message,
+                retrieved_docs=retrieved_docs[:3],
+                chat_history=chat_history_formatted,
+            ):
+                full_response += chunk
+                yield {"chunk": chunk, "source": source}
         else:
-            context = None
             source = "general"
-
-        full_response = ""
-        for chunk in llm_service.generate_stream(
-            prompt=message, context=context, chat_history=chat_history_formatted
-        ):
-            full_response += chunk
-            yield {"chunk": chunk, "source": source}
+            for chunk in llm_service.generate_stream(
+                prompt=message, context=None, chat_history=chat_history_formatted
+            ):
+                full_response += chunk
+                yield {"chunk": chunk, "source": source}
 
         db.add_message(session_id, "user", message)
         db.add_message(session_id, "assistant", full_response)

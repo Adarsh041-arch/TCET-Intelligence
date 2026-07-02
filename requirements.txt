@@ -1,9 +1,9 @@
 fastapi
 uvicorn
+mysql-connector-python
 pydantic
 pydantic-settings
 chromadb
-sentence-transformers
 ollama
 python-docx
 PyPDF2
@@ -14,3 +14,9 @@ aiofiles
 streamlit
 requests
 langgraph
+langchain-ollama
+nest-asyncio
+langchain-mcp-adapters
+pandas
+openpyxl
+bcrypt

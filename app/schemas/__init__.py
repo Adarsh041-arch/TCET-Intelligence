@@ -10,4 +10,9 @@ from .schemas import (
     DocumentInfo,
     ChatHistoryItem,
     HealthResponse,
+    ApiKeySaveRequest,
+    ApiKeyStatusResponse,
+    DirectoryAddRequest,
+    UserDirectoriesResponse,
+    DirectoryInfo,
 )
