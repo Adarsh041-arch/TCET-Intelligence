@@ -29,6 +29,8 @@ from app.graphs.chat_graph import chat_agent
 from app.models.database import db
 from app.core.config import config
 from app.services.sql_connector import db_connector
+from app.prompts.web import WEB_SEARCH_SYSTEM_PROMPT
+from app.prompts.general import GENERAL_CHAT_PROMPT, RAG_FALLBACK_PROMPT
 import uuid
 import json
 import time
@@ -305,6 +307,13 @@ async def chat_stream(
             "find",
             "search",
             "list all",
+            "fees",
+            "fee",
+            "hostel",
+            "hostel fees",
+            "tcet fees",
+            "tcet hostel",
+            "fee structure",
         ]
         fs_patterns = [
             "file", "folder", "directory", "filesystem", "create", "write", "read", 
@@ -345,7 +354,9 @@ async def chat_stream(
 
                     if getattr(request, "attached_files", None):
                         filter_dict = {"filename": {"$in": request.attached_files}}
-                        threshold = 0.1  # aggressively fetch attached file chunks regardless of embedding strictness
+                        threshold = 0.1
+                    elif mode_override == "rag":
+                        filter_dict = {"source": "tcet_managed"}
                     
                     retrieved_docs = vector_store.retrieve_similar(
                         query, top_k=config.top_k, threshold=threshold,
@@ -405,11 +416,7 @@ async def chat_stream(
                     
                     web_images = search_res.get("images", [])
                     context = f"Web search results for '{query}':\n\n{search_res.get('context', '')}"
-                    web_sys_prompt = (
-                        "You are a helpful AI assistant. Answer the user's question accurately "
-                        "using the provided web search results as context. You are allowed to answer "
-                        "questions beyond TCET using this web context. Do not restrict yourself to TCET."
-                    )
+                    web_sys_prompt = WEB_SEARCH_SYSTEM_PROMPT
                     gen = llm_service.generate_stream(query, context, history, system_prompt=web_sys_prompt)
             except Exception as e:
                 def stream_err():
@@ -446,24 +453,16 @@ async def chat_stream(
             gen = stream_sql(sql_resp)
         elif (query_type == "rag" or getattr(request, "attached_files", None)) and retrieved_docs:
             source = "rag"
+            filtered_docs = [d for d in retrieved_docs if d.get("similarity", 1) >= config.similarity_threshold]
             gen = llm_service.generate_rag_response_stream(
-                query, retrieved_docs[:3], history
+                query, filtered_docs, history
             )
         else:
             source = "general"
             if mode_override == "rag":
-                # User selected RAG but we found no documents, keep the TCET point of view
-                sys_prompt = (
-                    "You are an AI assistant for TCET (Thakur College of Engineering and Technology). "
-                    "Answer the query from the point of view of TCET. Since you do not have relevant documents, "
-                    "state that you cannot find the requested information in the TCET documents."
-                )
+                sys_prompt = RAG_FALLBACK_PROMPT
             else:
-                sys_prompt = (
-                    "You are a helpful AI assistant. You can converse on any topic. "
-                    "While your primary identity is an assistant for TCET (Thakur College of Engineering and Technology), "
-                    "you are happy to answer any general questions, write code, or tell jokes."
-                )
+                sys_prompt = GENERAL_CHAT_PROMPT
             gen = llm_service.generate_stream(query, None, history, system_prompt=sys_prompt)
 
         completed_normally = False

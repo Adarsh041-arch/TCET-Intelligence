@@ -6,6 +6,7 @@ from app.api.admin import router as admin_router
 from app.api.sql_routes import router as sql_router
 from app.core.config import config
 from app.services.llm import llm_service
+from app.document_generation.api.routes import router as doc_gen_router
 
 
 @asynccontextmanager
@@ -38,6 +39,7 @@ app.add_middleware(
 app.include_router(api_router, prefix="/api")
 app.include_router(admin_router, prefix="/api/admin")
 app.include_router(sql_router, prefix="/api/admin")
+app.include_router(doc_gen_router)
 
 
 @app.get("/")

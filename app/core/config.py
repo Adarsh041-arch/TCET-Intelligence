@@ -15,6 +15,7 @@ class Config(BaseModel):
     chroma_persist_directory: str
     upload_directory: str
     mcp_allowed_directory: Optional[str] = None
+    tcet_docs_directory: str = "data/tcet_docs"
     database_url: str
     chunk_size: int
     chunk_overlap: int
