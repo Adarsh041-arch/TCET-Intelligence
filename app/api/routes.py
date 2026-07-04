@@ -372,7 +372,7 @@ async def chat_stream(
                     elif mode_override == "rag":
                         tcet_filenames = vector_store.get_all_filenames(where={"source": "tcet_managed"})
                         relevant = llm_service.select_relevant_tcet_docs(query, tcet_filenames)
-                        if relevant:
+                        if relevant and len(relevant) < len(tcet_filenames):
                             filter_dict = {"source": "tcet_managed", "filename": {"$in": relevant}}
                         else:
                             filter_dict = {"source": "tcet_managed"}

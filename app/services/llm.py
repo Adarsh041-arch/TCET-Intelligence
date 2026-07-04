@@ -324,12 +324,14 @@ class LLMService:
             text = response.get("response", "").strip()
             if text.upper() == "NONE" or not text:
                 return []
-            selected = [f.strip() for f in text.split(",") if f.strip()]
-            valid = [f for f in selected if f in filenames]
-            return valid if valid else filenames
+            text = text.replace("\n", ",").replace("- ", "").replace("* ", "")
+            selected = [f.strip().strip('"\'') for f in text.split(",") if f.strip()]
+            exact = [f for f in selected if f in filenames]
+            partial = [f for f in filenames if any(s.lower() in f.lower() for s in selected)] if not exact else exact
+            return exact if exact else partial[:5]
         except Exception as e:
             print(f"Error selecting relevant docs: {e}")
-            return filenames
+            return []
 
     def decide_web_search(self, query: str) -> bool:
         query_lower = query.lower()
