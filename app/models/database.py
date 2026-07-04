@@ -78,6 +78,20 @@ class Database:
                     FOREIGN KEY (uploaded_by) REFERENCES users(user_id)
                 )
             """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS tcet_doc_index (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    file_name TEXT NOT NULL,
+                    file_path TEXT NOT NULL UNIQUE,
+                    file_hash TEXT,
+                    file_size INTEGER,
+                    indexed INTEGER DEFAULT 0,
+                    doc_id TEXT,
+                    chunks_count INTEGER DEFAULT 0,
+                    indexed_at TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
             conn.commit()
             self._create_default_admin()
 
@@ -349,6 +363,101 @@ class Database:
             {"id": row[0], "directory_path": row[1], "created_at": row[2]}
             for row in cursor.fetchall()
         ]
+
+
+    # ── TCET Documents Index Management ────────────────────
+    def get_tcet_doc_by_path(self, file_path: str) -> Optional[Dict[str, Any]]:
+        cursor = self._get_connection().cursor()
+        cursor.execute(
+            "SELECT * FROM tcet_doc_index WHERE file_path = ?", (file_path,)
+        )
+        row = cursor.fetchone()
+        if row:
+            return {
+                "id": row[0],
+                "file_name": row[1],
+                "file_path": row[2],
+                "file_hash": row[3],
+                "file_size": row[4],
+                "indexed": bool(row[5]),
+                "doc_id": row[6],
+                "chunks_count": row[7],
+                "indexed_at": row[8],
+                "created_at": row[9],
+            }
+        return None
+
+    def upsert_tcet_doc(self, file_name: str, file_path: str, file_hash: str, file_size: int) -> bool:
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """INSERT INTO tcet_doc_index (file_name, file_path, file_hash, file_size)
+                       VALUES (?, ?, ?, ?)
+                       ON CONFLICT(file_path) DO UPDATE SET
+                         file_name = excluded.file_name,
+                         file_hash = excluded.file_hash,
+                         file_size = excluded.file_size,
+                         indexed = CASE WHEN indexed = 1 AND excluded.file_hash != file_hash THEN 0 ELSE indexed END,
+                         doc_id = CASE WHEN excluded.file_hash != file_hash THEN NULL ELSE doc_id END,
+                         chunks_count = CASE WHEN excluded.file_hash != file_hash THEN 0 ELSE chunks_count END,
+                         indexed_at = CASE WHEN excluded.file_hash != file_hash THEN NULL ELSE indexed_at END""",
+                    (file_name, file_path, file_hash, file_size),
+                )
+                conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error upserting tcet doc: {e}")
+            return False
+
+    def mark_tcet_doc_indexed(self, file_path: str, doc_id: str, chunks_count: int) -> bool:
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """UPDATE tcet_doc_index
+                       SET indexed = 1, doc_id = ?, chunks_count = ?, indexed_at = CURRENT_TIMESTAMP
+                       WHERE file_path = ?""",
+                    (doc_id, chunks_count, file_path),
+                )
+                conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error marking tcet doc indexed: {e}")
+            return False
+
+    def get_all_tcet_docs(self) -> List[Dict[str, Any]]:
+        cursor = self._get_connection().cursor()
+        cursor.execute(
+            "SELECT * FROM tcet_doc_index ORDER BY file_name ASC"
+        )
+        rows = cursor.fetchall()
+        result = []
+        for row in rows:
+            result.append({
+                "id": row[0],
+                "file_name": row[1],
+                "file_path": row[2],
+                "file_hash": row[3],
+                "file_size": row[4],
+                "indexed": bool(row[5]),
+                "doc_id": row[6],
+                "chunks_count": row[7],
+                "indexed_at": row[8],
+                "created_at": row[9],
+            })
+        return result
+
+    def delete_tcet_doc(self, file_path: str) -> bool:
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM tcet_doc_index WHERE file_path = ?", (file_path,))
+                conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error deleting tcet doc record: {e}")
+            return False
 
 
 db = Database()
