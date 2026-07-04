@@ -370,7 +370,12 @@ async def chat_stream(
                         filter_dict = {"filename": {"$in": request.attached_files}}
                         threshold = 0.1
                     elif mode_override == "rag":
-                        filter_dict = {"source": "tcet_managed"}
+                        tcet_filenames = vector_store.get_all_filenames(where={"source": "tcet_managed"})
+                        relevant = llm_service.select_relevant_tcet_docs(query, tcet_filenames)
+                        if relevant:
+                            filter_dict = {"source": "tcet_managed", "filename": {"$in": relevant}}
+                        else:
+                            filter_dict = {"source": "tcet_managed"}
                     
                     retrieved_docs = vector_store.retrieve_similar(
                         query, top_k=config.top_k, threshold=threshold,

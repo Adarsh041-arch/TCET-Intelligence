@@ -1,3 +1,14 @@
+DOCUMENT_RELEVANCE_PROMPT = (
+    "You are a relevance classifier for TCET college documents. "
+    "Given a user query and a list of available document filenames, "
+    "select ONLY the documents that are highly likely to contain the answer.\n"
+    "Be strict — only pick documents whose filename or title clearly relates to the query topic.\n"
+    "Return the selected filenames as a comma-separated list. If none are relevant, return 'NONE'.\n\n"
+    "Available documents:\n{filenames}\n\n"
+    "Query: {query}\n"
+    "Relevant documents:"
+)
+
 DOCUMENT_QUERY_DECISION_PROMPT = (
     "You have access to these TCET documents:\n{filenames}\n\n"
     "Determine if the user query is asking about a specific document's full content "

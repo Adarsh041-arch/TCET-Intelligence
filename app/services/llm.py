@@ -6,7 +6,7 @@ from typing import Optional, List, Dict, Any, Generator
 import ollama
 from app.core.config import config
 from app.prompts.general import SYSTEM_CONTEXT_PROMPT, SYSTEM_NO_CONTEXT_PROMPT
-from app.prompts.rag import RAG_STAFF_PROMPT, DOCUMENT_QUERY_DECISION_PROMPT
+from app.prompts.rag import RAG_STAFF_PROMPT, DOCUMENT_QUERY_DECISION_PROMPT, DOCUMENT_RELEVANCE_PROMPT
 from app.services.vector_store import vector_store
 from app.prompts.sql import SQL_SYSTEM_PROMPT, SQL_QUERY_TEMPLATE
 from app.prompts.web import WEB_SEARCH_DECISION_PROMPT
@@ -309,6 +309,27 @@ class LLMService:
             return None
         most_common = Counter(filenames).most_common(1)
         return most_common[0][0] if most_common else None
+
+    def select_relevant_tcet_docs(self, query: str, filenames: List[str]) -> List[str]:
+        if not filenames:
+            return []
+        filenames_str = "\n".join(f"- {f}" for f in filenames)
+        prompt = DOCUMENT_RELEVANCE_PROMPT.format(filenames=filenames_str, query=query)
+        try:
+            response = ollama.generate(
+                model=self.model,
+                prompt=prompt,
+                options={"num_predict": 128, "temperature": 0.0},
+            )
+            text = response.get("response", "").strip()
+            if text.upper() == "NONE" or not text:
+                return []
+            selected = [f.strip() for f in text.split(",") if f.strip()]
+            valid = [f for f in selected if f in filenames]
+            return valid if valid else filenames
+        except Exception as e:
+            print(f"Error selecting relevant docs: {e}")
+            return filenames
 
     def decide_web_search(self, query: str) -> bool:
         query_lower = query.lower()
