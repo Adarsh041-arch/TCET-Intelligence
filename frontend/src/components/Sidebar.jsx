@@ -1,12 +1,13 @@
 import { useAuth } from '../context/AuthContext';
 import {
-  MessageSquare, Plus, Upload, BookOpen, Database, Terminal, LogOut, Zap, ChevronLeft,
+  MessageSquare, Plus, Upload, BookOpen, Database, Terminal, LogOut, Zap, ChevronLeft, FileText,
 } from 'lucide-react';
 
 const ADMIN_PAGES = [
   { key: 'chat', label: 'Chat Interface', icon: MessageSquare },
   { key: 'upload', label: 'Index Documents', icon: Upload },
   { key: 'documents', label: 'Knowledge Base', icon: BookOpen },
+  { key: 'tcet-docs', label: 'TCET Docs', icon: FileText },
   { key: 'database', label: 'Database Hub', icon: Database },
   { key: 'sql', label: 'SQL Console', icon: Terminal },
 ];

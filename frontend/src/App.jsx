@@ -8,6 +8,7 @@ import UploadPage from './components/UploadPage';
 import DocumentsPage from './components/DocumentsPage';
 import DatabasePage from './components/DatabasePage';
 import SQLConsolePage from './components/SQLConsolePage';
+import TCETDocsPage from './components/TCETDocsPage';
 import { getSessions, createSession } from './services/api';
 
 function MainLayout() {
@@ -68,6 +69,8 @@ function MainLayout() {
         return <DatabasePage />;
       case 'sql':
         return <SQLConsolePage />;
+      case 'tcet-docs':
+        return <TCETDocsPage />;
       case 'chat':
       default:
         return (

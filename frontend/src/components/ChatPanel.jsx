@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
   Send, Square, Paperclip, ChevronDown, ChevronRight, ChevronDownCircle,
-  FileText, Sparkles, BookOpen, Database, Folder, Globe, Copy, Check, RotateCw,
+  FileText, Sparkles, BookOpen, Database, Folder, Globe, Copy,
   Search, CheckCircle,
 } from 'lucide-react';
 import { getHistory, chatStream, readSSEStream, uploadDocument, getApiKeyStatus, getUserDirectories } from '../services/api';
@@ -11,6 +11,7 @@ import CodeBlock from './CodeBlock';
 import MermaidBlock from './MermaidBlock';
 import ApiKeyModal from './ApiKeyModal';
 import DirectoryManagerModal from './DirectoryManagerModal';
+import ExportModal from './ExportModal';
 
 function formatTime(iso) {
   if (!iso) return '';
@@ -46,7 +47,7 @@ export default function ChatPanel({ sessionId, onSessionUpdate }) {
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [streamText, setStreamText] = useState('');
-  const [streamMeta, setStreamMeta] = useState(null);
+  const [_streamMeta, setStreamMeta] = useState(null);
   const [expandedDocs, setExpandedDocs] = useState({});
   const [files, setFiles] = useState([]);
   const [mode, setMode] = useState(null);
@@ -65,6 +66,8 @@ export default function ChatPanel({ sessionId, onSessionUpdate }) {
   const [showKeyModal, setShowKeyModal] = useState(false);
   const [userDirs, setUserDirs] = useState([]);
   const [showDirModal, setShowDirModal] = useState(false);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportContent, setExportContent] = useState('');
 
   // Fetch web search API key status
   useEffect(() => {
@@ -363,6 +366,15 @@ export default function ChatPanel({ sessionId, onSessionUpdate }) {
                 )}
               </div>
               <div className="message-actions">
+                {msg.role === 'assistant' && (
+                  <button
+                    className="msg-action-btn"
+                    onClick={() => { setExportContent(msg.content); setExportModalOpen(true); }}
+                    title="Export as document"
+                  >
+                    <FileText size={13} />
+                  </button>
+                )}
                 <button className="msg-action-btn" onClick={() => copyMessage(msg.content)} title="Copy message">
                   <Copy size={13} />
                 </button>
@@ -612,6 +624,12 @@ export default function ChatPanel({ sessionId, onSessionUpdate }) {
             setMode('filesystem');
           }
         }}
+      />
+
+      <ExportModal
+        open={exportModalOpen}
+        onClose={() => setExportModalOpen(false)}
+        markdownContent={exportContent}
       />
     </div>
   );
