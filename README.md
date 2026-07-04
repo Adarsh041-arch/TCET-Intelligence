@@ -1,171 +1,171 @@
-# 🏫 TCET Intelligence - Advanced RAG & Agentic Chatbot
+# TCET Intelligence - Advanced RAG & Agentic Chatbot
 
-A production-ready, highly modular enterprise chatbot platform built with **FastAPI**, **React + Vite**, and local LLM inference via **Ollama**. Features state-of-the-art document indexing, SQL database execution, local filesystem agents, and real-time internet search with structured source citations and inline image galleries.
-
----
-
-## ⚡ Core Features
-
-*   **🎨 Claude-Style Premium UI**: A highly refined, clean chat timeline column capped at `768px` for focused reading. Implements bubble-less left-aligned AI responses and right-aligned user text blocks.
-*   **📱 Persistent Collapsible Sidebar**: Smooth slide transition animation with local preference storage (`localStorage`) and a floating toggle button.
-*   **🔍 Clickable Web Search Sources**: Displays webpage reference citations in a dropdown drawer with clickable links to the original sources.
-*   **🖼️ Related Image Gallery**: Fetches and renders relevant visual search result cards inline inside chat threads.
-*   **🤖 Adaptive Query Router**: Automatically decides when to answer via the model's static knowledge and when it lacks detail, dynamically triggering web search only when necessary.
-*   **🔗 Strict Tool Gating**: SQL querying and Filesystem operations are strictly isolated and execution is gated behind explicit user toggle switches.
-*   **📄 High-Fidelity RAG Pipeline**: Index, parse, chunk, embed, and query PDF/TXT/DOCX files locally with ChromaDB.
+A production-ready enterprise chatbot platform for Thakur College of Engineering and Technology, built with **FastAPI**, **React + Vite**, and local LLM inference via **Ollama**. Features RAG with adaptive partial/global document loading, SQL database execution, MCP filesystem agent, web search with image galleries, and document generation.
 
 ---
 
-## 🛠️ Tech Stack
+## Core Features
 
-*   **Frontend**: React (ES6), Lucide Icons, React Markdown (GFM), Vite Dev Server
-*   **Backend**: FastAPI, Pydantic, SQLite (Message History)
-*   **Vector Database**: ChromaDB (Local persistent storage)
-*   **Inference Engine**: Ollama (supports `qwen2.5`, `mistral`, `gemma4` etc.)
-*   **Search Provider**: Tavily API (Search Context + Image API)
-*   **File Agent**: MCP Filesystem Server integration
+- **Adaptive RAG Engine** — Automatically decides between partial (top-5 chunks) and global (full document) retrieval based on query intent
+- **MCP Filesystem Agent** — Read, write, and manage files through an LLM-powered agent using the Model Context Protocol
+- **SQL Database Connector** — Query SQLite/MySQL/PostgreSQL databases in natural language
+- **Web Search with Images** — Tavily-powered search with inline source citations and image galleries
+- **Document Q&A** — Upload PDF, DOCX, XLSX, CSV, TXT files; index them locally with ChromaDB
+- **Document Generation** — Generate formatted DOCX, PDF, PPTX, XLSX documents via sandboxed Python execution
+- **TCET Docs Management** — Index and search college-managed documents (syllabus, notices, timetables, etc.)
+- **Claude-Style UI** — Clean chat interface with collapsible sidebar, mode toggles, and source references
+- **Streamlit Alternative** — Lightweight Streamlit frontend as an alternative to the React UI
+- **Authentication** — JWT-based login with admin/user roles
 
 ---
 
-## 📐 Project Structure
+## Project Structure
 
 ```
 .
 ├── app/
-│   ├── api/            # API endpoints (Auth, Chat, SQL, Admin)
-│   ├── core/           # Configuration parsing & core settings
-│   ├── documents/      # Text extraction and chunking
-│   ├── graphs/         # Conversational agent graphs
-│   ├── models/         # SQLite tables & database model wrapper
-│   ├── schemas/        # Pydantic schemas for payload validation
-│   ├── services/       # Business logic (auth, embeddings, LLM, MCP, web search, Chroma)
-│   └── main.py         # FastAPI application entry point
+│   ├── api/                # FastAPI endpoints (auth, chat, admin, SQL)
+│   ├── core/               # Config parsing (config.json), utilities
+│   ├── document_generation/ # DOCX/PDF/PPTX/XLSX generation with sandbox
+│   ├── documents/          # Text extraction and chunking pipeline
+│   ├── graphs/             # LangGraph conversational agent workflow
+│   ├── models/             # SQLite database model wrapper
+│   ├── prompts/            # System prompts for each query type
+│   ├── schemas/            # Pydantic request/response schemas
+│   ├── services/           # LLM, embeddings, vector store, MCP agent, web search, auth
+│   └── main.py             # FastAPI entry point
 ├── data/
-│   ├── chroma/         # Persistent Vector Embeddings
-│   └── uploads/        # Uploaded source documents
+│   ├── chroma/             # ChromaDB persistent vector store
+│   ├── uploads/            # Uploaded user documents
+│   └── tcet_docs/          # College-managed documents
 ├── frontend/
-│   ├── public/         # Icons and SVG assets
 │   ├── src/
-│   │   ├── components/ # React components (ChatPanel, Sidebar, Modals, Pages)
-│   │   ├── context/    # Authentication Context
-│   │   ├── services/   # HTTP request layer
-│   │   ├── App.jsx     # Layout and page shell
-│   │   └── index.css   # Main CSS stylesheet
-│   └── vite.config.js  # Vite server setup
-├── config.json         # Global settings and DB settings
-├── run_all.bat         # Single-click run script
-└── requirements.txt    # Python backend requirements
+│   │   ├── components/     # React components (ChatPanel, Sidebar, Modals, Pages)
+│   │   ├── context/        # Auth context provider
+│   │   ├── services/       # HTTP API client
+│   │   ├── App.jsx         # Layout shell
+│   │   └── index.css       # Main stylesheet
+│   └── vite.config.js
+├── config.json             # Global settings (Ollama URL, model, chunk params, etc.)
+├── latency_test.py         # Latency benchmark for all critical operations
+├── streamlit_app.py        # Alternative Streamlit frontend
+├── run_all.bat             # One-click launcher
+└── requirements.txt
 ```
 
 ---
 
-## ⚙️ Configuration
+## RAG: Partial vs Global Loading
 
-System parameters can be adjusted inside the [config.json](file:///c:/Users/adars/OneDrive/Desktop/LOCAL%20CHATBOT%20FOR%20TCET/config.json) file:
+The system intelligently chooses between two retrieval strategies based on query intent:
+
+| Query Type | Strategy | Example |
+|---|---|---|
+| **Topic-specific** | Partial — top 5 most relevant chunks | "What is the attendance policy?" |
+| **Document-specific** | Global — ALL chunks of the matching document | "Show me the full fees structure document" |
+
+Detection uses a two-stage approach:
+1. **Keyword fast-path** — Instant match on phrases like "show me", "full document", "read the file"
+2. **LLM fallback** — A lightweight classification call for ambiguous queries
+
+---
+
+## MCP Filesystem Agent
+
+The MCP agent uses `@modelcontextprotocol/server-filesystem` with a configurable recursion limit:
+
+| Parameter | Default | Description |
+|---|---|---|
+| `recursion_limit` | 20 | Max tool-call + reasoning steps per query |
+| `timeout` | 180s | Hard deadline for filesystem operations |
+
+---
+
+## Latency Benchmarks
+
+Measured on local hardware (Ollama + SQLite + ChromaDB). Average of 5 iterations:
+
+| Category | Avg Latency | Fastest | Slowest |
+|---|---|---|---|
+| Vector Store (embed + search) | ~245ms | 1.3ms (count) | 5631ms (first cold embed) |
+| LLM Generation | ~350ms | 0ms (cached) | 1642ms |
+| Database (SQLite) | ~3ms | 2.7ms | 7.7ms |
+| Auth (bcrypt + JWT) | ~328ms | 0.1ms (JWT) | 868ms (bcrypt) |
+| Doc Processing (chunking) | ~0.4ms | 0.3ms | 0.9ms |
+
+---
+
+## Configuration
+
+Edit `config.json` to customize behavior:
 
 ```json
 {
-    "project_name": "TCET Chatbot",
-    "version": "1.0.0",
     "ollama_base_url": "http://localhost:11434",
-    "llm_model": "qwen2.5:3b",
+    "llm_model": "gemma4:31b-cloud",
     "embedding_model": "nomic-embed-text:latest",
-    "chroma_persist_directory": "data/chroma",
-    "upload_directory": "data/uploads",
     "chunk_size": 1000,
-    "chunk_overlap": 100,
+    "chunk_overlap": 200,
     "top_k": 5,
-    "similarity_threshold": 0.4,
+    "similarity_threshold": 0.45,
+    "mcp_allowed_directory": "C:/Users/.../Desktop",
     "admin_username": "admin",
-    "admin_password": "admin123",
-    "default_web_search_provider": "tavily"
+    "admin_password": "admin123"
 }
 ```
 
 ---
 
-## 🚀 Installation & Setup
+## Installation & Setup
 
 ### Prerequisites
-
-1.  **Python 3.10+**
-2.  **Node.js 18+** & **npm**
-3.  **Ollama** installed and running
+- Python 3.10+
+- Node.js 18+ & npm
+- Ollama installed and running
 
 ### Setup
 
-1.  **Clone the Repository**:
-    ```bash
-    git clone <repository-url>
-    cd Local-Chatbot-for-College
-    ```
+```bash
+# Clone and setup
+git clone <repo-url>
+cd TCET-Chatbot
+setup.bat
 
-2.  **Initialize Environment & Dependencies**:
-    Run the setup script:
-    ```bash
-    setup.bat
-    ```
-
-3.  **Pull Required Local Models**:
-    Ensure Ollama is running and download the LLM and Embedding models:
-    ```bash
-    ollama pull qwen2.5:3b
-    ollama pull nomic-embed-text:latest
-    ```
+# Pull models
+ollama pull gemma4:31b-cloud
+ollama pull nomic-embed-text:latest
+```
 
 ---
 
-## 🏃 Running the Application
+## Running
 
-### Option 1: Run All Services (Recommended)
-Double-click the `run_all.bat` script in the root directory, or run:
+### Full Stack
 ```bash
 .\run_all.bat
 ```
+- Backend: `http://localhost:8000`
+- Frontend: `http://localhost:5173`
+- API Docs: `http://localhost:8000/docs`
 
-### Option 2: Start Services Separately
-1.  **Backend Server**:
-    ```bash
-    .\run_backend.bat
-    ```
-    *   Backend API will run at: `http://localhost:8000`
-    *   Interactive API Documentation: `http://localhost:8000/docs`
-
-2.  **Frontend Server**:
-    ```bash
-    .\run_frontend.bat
-    ```
-    *   Vite Dev Server will host the client at: `http://localhost:5173`
-
----
-
-## 🔑 Default Credentials
-
-*   **Administrator Account**:
-    *   **Username**: `admin`
-    *   **Password**: `admin123`
-*   *Note: Regular users can be registered directly using the Sign Up page in the UI.*
-
----
-
-## 🛠️ Troubleshooting
-
-### Ollama Model issues
-If the LLM responds slowly or connections fail:
+### Streamlit Only
 ```bash
-# Check running models
-ollama list
-
-# Ensure server is active
-ollama serve
+streamlit run streamlit_app.py
 ```
 
-### Resetting Embeddings Database
-To clear the vector store indices:
-1.  Delete the `data/chroma/` directory.
-2.  Re-run the backend server and upload files again.
+---
+
+## Default Credentials
+
+| Role | Username | Password |
+|---|---|---|
+| Admin | admin | admin123 |
+| User | (register via UI) | — |
 
 ---
 
-## 📄 License
-This project is licensed under the MIT License.
+## Troubleshooting
+
+- **Slow LLM response** — Ensure Ollama is running (`ollama serve`)
+- **Reset vector store** — Delete `data/chroma/` and re-upload documents
+- **MCP agent fails** — Verify `mcp_allowed_directory` in config.json and that `npx` is available
