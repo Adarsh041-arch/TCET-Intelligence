@@ -281,7 +281,7 @@ export default function ChatPanel({ sessionId, onSessionUpdate }) {
       controllerRef.current = null;
       streamedRef.current = '';
     }
-  }, [input, sessionId, streaming, files, mode, onSessionUpdate]);
+  }, [input, sessionId, streaming, files, activeModes, onSessionUpdate]);
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
