@@ -142,7 +142,7 @@ def build_tools(modes: List[str], user_id: Optional[str] = None) -> list:
 
     if "documentation" in modes:
         from app.document_generation.storage.file_storage import file_storage
-        from app.document_generation.generators import GeneratorRegistry
+        from app.document_generation.registry import GeneratorRegistry
         from app.document_generation.templates.template_manager import template_manager
         import uuid
 
