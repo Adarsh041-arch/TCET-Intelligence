@@ -249,7 +249,7 @@ def build_tools(modes: List[str], user_id: Optional[str] = None) -> list:
             """
             Generate a formatted document from a description.
             format can be: docx (Word), pdf, pptx (PowerPoint), or xlsx (Excel).
-            Returns the filename of the generated document.
+            Returns a download URL for the generated document.
             """
             import re
             try:
@@ -277,7 +277,8 @@ def build_tools(modes: List[str], user_id: Optional[str] = None) -> list:
                 template = template_manager.get_template("default")
                 result = gen.generate(markdown_content, template, {})
                 file_storage.store_file(result, filename, job_id)
-                return f"Document generated: {filename}"
+                download_url = file_storage.get_download_url(job_id, filename)
+                return f"Document ready! Download it at: {download_url}"
             except Exception as e:
                 return f"Error generating document: {e}"
 
