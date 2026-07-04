@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
-  FileText, File, Presentation, Table, X, Download, Eye, Loader,
+  FileText, File, Presentation, Table, X, Download, Eye, Loader, Zap,
 } from 'lucide-react';
 import { generateDocument, getDocumentFormats, getTemplates } from '../services/api';
 import PreviewModal from './PreviewModal';
@@ -19,11 +19,14 @@ const FORMAT_NAMES = {
   xlsx: 'Excel Spreadsheet',
 };
 
+const V2_CAPABLE = ['docx', 'pptx', 'xlsx'];
+
 export default function ExportModal({ open, onClose, markdownContent }) {
   const [formats, setFormats] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [selectedFormat, setSelectedFormat] = useState('docx');
   const [selectedTemplate, setSelectedTemplate] = useState('default');
+  const [useV2, setUseV2] = useState(true);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
@@ -41,6 +44,7 @@ export default function ExportModal({ open, onClose, markdownContent }) {
     getTemplates().then((data) => setTemplates(data || [])).catch(() => {});
     setSelectedFormat('docx');
     setSelectedTemplate('default');
+    setUseV2(true);
   }, [open]);
 
   if (!open) return null;
@@ -54,6 +58,7 @@ export default function ExportModal({ open, onClose, markdownContent }) {
         markdown: markdownContent,
         format: selectedFormat,
         template_id: selectedTemplate,
+        generator_version: useV2 && V2_CAPABLE.includes(selectedFormat) ? 'v2' : 'v1',
       });
       setResult(res);
     } catch (err) {
@@ -71,6 +76,7 @@ export default function ExportModal({ open, onClose, markdownContent }) {
         markdown: markdownContent,
         format: selectedFormat,
         template_id: selectedTemplate,
+        generator_version: useV2 && V2_CAPABLE.includes(selectedFormat) ? 'v2' : 'v1',
       });
       setResult(res);
       if (res.download_url) {
@@ -123,7 +129,7 @@ export default function ExportModal({ open, onClose, markdownContent }) {
             <div className="export-section">
               <label className="export-label">Format</label>
               <div className="format-grid">
-                {formats.map((fmt) => {
+                {formats.filter((f) => !f.id.endsWith('-v2')).map((fmt) => {
                   const Icon = FORMAT_ICONS[fmt.id] || File;
                   const isActive = selectedFormat === fmt.id;
                   return (
@@ -140,6 +146,22 @@ export default function ExportModal({ open, onClose, markdownContent }) {
                 })}
               </div>
             </div>
+
+            {V2_CAPABLE.includes(selectedFormat) && (
+              <div className="export-section">
+                <label className="export-label">
+                  <label className="v2-toggle" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={useV2}
+                      onChange={(e) => setUseV2(e.target.checked)}
+                    />
+                    <Zap size={14} color="#8fbc8f" />
+                    <span>Use v2 generator (AST-based)</span>
+                  </label>
+                </label>
+              </div>
+            )}
 
             <div className="export-section">
               <label className="export-label">Template</label>

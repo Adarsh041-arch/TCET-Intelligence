@@ -83,7 +83,7 @@ export default function Sidebar({
         <div className="sidebar-section-title">Conversations</div>
         {sessions.length > 0 ? (
           sessions.map((s) => {
-            const name = s.session_name || 'Untitled Session';
+            const name = s.first_message || s.session_name || 'Untitled Session';
             const truncated = name.length > 26 ? name.slice(0, 26) + '…' : name;
             const isActive = s.session_id === activeSessionId;
             return (

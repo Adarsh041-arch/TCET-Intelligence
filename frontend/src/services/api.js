@@ -254,7 +254,7 @@ export async function deleteUserDirectory(directoryPath) {
 }
 
 // ── Document Generation ─────────────────────────────────────
-export async function generateDocument({ markdown, html, format, template_id, metadata, filename }) {
+export async function generateDocument({ markdown, html, format, template_id, metadata, filename, generator_version }) {
   return request('/document-gen/generate', {
     method: 'POST',
     body: {
@@ -264,6 +264,7 @@ export async function generateDocument({ markdown, html, format, template_id, me
       template_id: template_id || 'default',
       metadata: metadata || {},
       filename: filename || null,
+      generator_version: generator_version || 'v1',
     },
   });
 }

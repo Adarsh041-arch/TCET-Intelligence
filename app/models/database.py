@@ -168,7 +168,11 @@ class Database:
     def get_user_sessions(self, user_id: str) -> List[Dict[str, Any]]:
         cursor = self._get_connection().cursor()
         cursor.execute(
-            "SELECT session_id, session_name, created_at, updated_at FROM sessions WHERE user_id = ? ORDER BY updated_at DESC",
+            """
+            SELECT s.session_id, s.session_name, s.created_at, s.updated_at,
+                   (SELECT m.content FROM messages m WHERE m.session_id = s.session_id AND m.role = 'user' ORDER BY m.message_id ASC LIMIT 1) AS first_message
+            FROM sessions s WHERE s.user_id = ? ORDER BY s.updated_at DESC
+            """,
             (user_id,),
         )
         return [
@@ -177,6 +181,7 @@ class Database:
                 "session_name": row[1],
                 "created_at": row[2],
                 "updated_at": row[3],
+                "first_message": row[4] or "",
             }
             for row in cursor.fetchall()
         ]
