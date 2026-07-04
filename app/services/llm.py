@@ -289,7 +289,7 @@ class LLMService:
             if indicator in query_lower:
                 return True
 
-        filenames = vector_store.get_all_filenames()
+        filenames = vector_store.get_all_filenames(where={"source": "tcet_managed"})
         filenames_str = "\n".join(f"- {f}" for f in filenames) if filenames else "No documents available."
         prompt = DOCUMENT_QUERY_DECISION_PROMPT.format(filenames=filenames_str, query=query)
         try:

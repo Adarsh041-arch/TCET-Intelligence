@@ -95,9 +95,12 @@ class VectorStore:
             print(f"Error retrieving documents: {e}")
             return []
 
-    def get_all_filenames(self) -> List[str]:
+    def get_all_filenames(self, where: Optional[Dict[str, Any]] = None) -> List[str]:
         try:
-            all_metadatas = self.collection.get()["metadatas"]
+            kwargs = {"include": ["metadatas"]}
+            if where:
+                kwargs["where"] = where
+            all_metadatas = self.collection.get(**kwargs)["metadatas"]
             filenames = set()
             for meta in all_metadatas:
                 if meta and "filename" in meta:
