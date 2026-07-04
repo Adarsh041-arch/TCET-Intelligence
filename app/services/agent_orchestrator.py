@@ -278,7 +278,7 @@ def build_tools(modes: List[str], user_id: Optional[str] = None) -> list:
                 result = gen.generate(markdown_content, template, {})
                 file_storage.store_file(result, filename, job_id)
                 download_url = file_storage.get_download_url(job_id, filename)
-                return f"Document ready! Download it at: {download_url}"
+                return f"{download_url}"
             except Exception as e:
                 return f"Error generating document: {e}"
 
@@ -315,6 +315,7 @@ def build_system_prompt(modes: List[str]) -> str:
 - If the user asks about data in connected databases, use the SQL tools.
 - If the user asks to read, write, list, or search files, use the filesystem tools (list_directory, read_file, write_file, search_files, get_file_info).
 - All filesystem operations are restricted to the user's allowed directories.
+- **When a tool returns a URL, include that URL exactly as returned — do not rewrite or construct your own URL.**
 
 For each major step, briefly announce what you're doing before calling the tool."""
     return prompt.strip()
