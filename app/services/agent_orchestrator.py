@@ -141,7 +141,7 @@ def build_tools(modes: List[str], user_id: Optional[str] = None) -> list:
         tools.append(web_search)
 
     if "documentation" in modes:
-        from app.document_generation.api.file_storage import file_storage
+        from app.document_generation.storage.file_storage import file_storage
         from app.document_generation.generators import GeneratorRegistry
         from app.document_generation.templates.template_manager import template_manager
         import uuid
@@ -176,7 +176,7 @@ def build_tools(modes: List[str], user_id: Optional[str] = None) -> list:
                 gen = GeneratorRegistry.get(effective_fmt, "v2")
                 template = template_manager.get_template("default")
                 result = gen.generate(markdown_content, {})
-                file_storage.store_file(job_id, filename, result)
+                file_storage.store_file(result, filename, job_id)
                 return f"Document generated: {filename}"
             except Exception as e:
                 return f"Error generating document: {e}"
