@@ -1,0 +1,24 @@
+{
+  "id": "default",
+  "name": "Default",
+  "description": "Clean default template",
+  "fonts": {
+    "heading": "Arial",
+    "body": "Arial"
+  },
+  "margins": {
+    "top": 72,
+    "bottom": 72,
+    "left": 72,
+    "right": 72
+  },
+  "colors": {
+    "primary": "#1a1a2e",
+    "secondary": "#16213e",
+    "accent": "#0f3460",
+    "text": "#333333",
+    "background": "#ffffff"
+  },
+  "header": "",
+  "footer": ""
+}

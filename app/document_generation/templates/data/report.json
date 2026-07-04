@@ -1,0 +1,24 @@
+{
+  "id": "report",
+  "name": "Report",
+  "description": "Professional report layout",
+  "fonts": {
+    "heading": "Calibri",
+    "body": "Calibri"
+  },
+  "margins": {
+    "top": 72,
+    "bottom": 72,
+    "left": 90,
+    "right": 90
+  },
+  "colors": {
+    "primary": "#1b4965",
+    "secondary": "#62b6cb",
+    "accent": "#cae9ff",
+    "text": "#2d2d2d",
+    "background": "#ffffff"
+  },
+  "header": "<p style='text-align:right;font-size:10px;color:#666;'>{title}</p><hr>",
+  "footer": "<p style='text-align:center;font-size:10px;color:#666;'>Page {page}</p>"
+}

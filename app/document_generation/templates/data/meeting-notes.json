@@ -1,0 +1,24 @@
+{
+  "id": "meeting-notes",
+  "name": "Meeting Notes",
+  "description": "Structured meeting notes layout",
+  "fonts": {
+    "heading": "Segoe UI",
+    "body": "Segoe UI"
+  },
+  "margins": {
+    "top": 72,
+    "bottom": 72,
+    "left": 72,
+    "right": 72
+  },
+  "colors": {
+    "primary": "#6c5ce7",
+    "secondary": "#a29bfe",
+    "accent": "#dfe6e9",
+    "text": "#2d3436",
+    "background": "#ffffff"
+  },
+  "header": "<p style='text-align:left;font-size:10px;color:#666;'>Meeting Notes</p><hr>",
+  "footer": "<p style='text-align:center;font-size:10px;color:#666;'>Page {page}</p>"
+}

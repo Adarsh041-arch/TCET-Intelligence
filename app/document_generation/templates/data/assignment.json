@@ -1,0 +1,24 @@
+{
+  "id": "assignment",
+  "name": "Assignment",
+  "description": "Academic assignment format",
+  "fonts": {
+    "heading": "Arial",
+    "body": "Arial"
+  },
+  "margins": {
+    "top": 72,
+    "bottom": 72,
+    "left": 72,
+    "right": 72
+  },
+  "colors": {
+    "primary": "#2d3436",
+    "secondary": "#636e72",
+    "accent": "#0984e3",
+    "text": "#2d3436",
+    "background": "#ffffff"
+  },
+  "header": "",
+  "footer": ""
+}

@@ -1,0 +1,24 @@
+{
+  "id": "research-paper",
+  "name": "Research Paper",
+  "description": "Academic research paper format",
+  "fonts": {
+    "heading": "Times New Roman",
+    "body": "Times New Roman"
+  },
+  "margins": {
+    "top": 96,
+    "bottom": 96,
+    "left": 96,
+    "right": 96
+  },
+  "colors": {
+    "primary": "#000000",
+    "secondary": "#222222",
+    "accent": "#444444",
+    "text": "#000000",
+    "background": "#ffffff"
+  },
+  "header": "",
+  "footer": "<p style='text-align:center;font-size:10px;color:#666;'>{page}</p>"
+}

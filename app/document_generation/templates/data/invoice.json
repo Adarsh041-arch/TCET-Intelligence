@@ -1,0 +1,24 @@
+{
+  "id": "invoice",
+  "name": "Invoice",
+  "description": "Professional invoice layout",
+  "fonts": {
+    "heading": "Arial",
+    "body": "Arial"
+  },
+  "margins": {
+    "top": 54,
+    "bottom": 54,
+    "left": 72,
+    "right": 72
+  },
+  "colors": {
+    "primary": "#e74c3c",
+    "secondary": "#c0392b",
+    "accent": "#f39c12",
+    "text": "#2c3e50",
+    "background": "#ffffff"
+  },
+  "header": "",
+  "footer": "<p style='text-align:center;font-size:10px;color:#666;'>Thank you for your business</p>"
+}

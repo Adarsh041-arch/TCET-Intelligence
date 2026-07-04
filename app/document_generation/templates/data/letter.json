@@ -1,0 +1,24 @@
+{
+  "id": "letter",
+  "name": "Letter",
+  "description": "Formal letter format",
+  "fonts": {
+    "heading": "Times New Roman",
+    "body": "Times New Roman"
+  },
+  "margins": {
+    "top": 96,
+    "bottom": 96,
+    "left": 96,
+    "right": 96
+  },
+  "colors": {
+    "primary": "#000000",
+    "secondary": "#333333",
+    "accent": "#555555",
+    "text": "#000000",
+    "background": "#ffffff"
+  },
+  "header": "",
+  "footer": ""
+}
