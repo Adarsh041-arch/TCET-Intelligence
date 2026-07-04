@@ -12,6 +12,7 @@ ENV/
 # Data
 data/chroma/
 data/uploads/
+data/tcet_docs/
 data/*.db
 *.sqlite
 *.sqlite3
