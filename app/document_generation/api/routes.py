@@ -200,19 +200,22 @@ async def preview_file(job_id: str, filename: str, format: str = Query(...)):
     if not os.path.exists(filepath):
         raise HTTPException(status_code=404, detail="Preview file not found")
 
-    if format == "pdf":
-        return FileResponse(
-            path=filepath,
-            media_type="application/pdf",
-            headers={"Content-Disposition": "inline"},
-        )
+    media_types = {
+        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ".pdf": "application/pdf",
+        ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    }
+    ext = os.path.splitext(filename)[1].lower()
 
-    file_bytes = file_storage.read_file(filepath)
-    if not file_bytes:
-        raise HTTPException(status_code=404, detail="File not found")
-
-    preview_data = preview_generator.generate("", format)
-    return {"success": True, "preview": preview_data}
+    # PDF serves inline; everything else is a download (browsers can't preview natively)
+    disposition = "inline" if ext == ".pdf" else "attachment"
+    return FileResponse(
+        path=filepath,
+        media_type=media_types.get(ext, "application/octet-stream"),
+        filename=filename,
+        headers={"Content-Disposition": disposition},
+    )
 
 
 @router.get("/formats")

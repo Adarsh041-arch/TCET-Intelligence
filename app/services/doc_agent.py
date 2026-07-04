@@ -88,6 +88,12 @@ async def stream_documentation_agent(
                 lines = lines[:-1]
             markdown_content = "\n".join(lines).strip()
 
+        # Strip raw HTML tags — markdown-it-py treats them as text
+        import re
+        markdown_content = re.sub(r"<[^>]+>", "", markdown_content)
+        # Collapse multiple blank lines
+        markdown_content = re.sub(r"\n{3,}", "\n\n", markdown_content)
+
         yield {"type": "thinking", "text": "Generating document file..."}
 
         # 4. Detect format from the user query

@@ -95,6 +95,8 @@ def _make_block_node(t: Token, tokens: list[Token], i: int) -> dict | None:
         return {"type": "block_code", "raw": t.content, "info": t.info.strip() if t.info else ""}
     if t.type == "code_block":
         return {"type": "block_code", "raw": t.content, "info": ""}
+    if t.type in ("html_block",):
+        return None
     if t.type == "bullet_list_open":
         return {"type": "list", "ordered": False}
     if t.type == "ordered_list_open":
@@ -287,6 +289,9 @@ def _walk_inline_tokens(tokens: list[Token]) -> list[dict]:
             if len(stack) > 1:
                 stack.pop()
             continue
+        elif ct.type in ("html_inline",):
+            continue
+
         elif ct.type == "image":
             src = ct.attrs.get("src", "") if ct.attrs else ""
             alt = ct.content or ""
@@ -299,13 +304,15 @@ def _walk_inline_tokens(tokens: list[Token]) -> list[dict]:
 
 
 def _merge_text(nodes: list) -> list:
-    """Merge adjacent text nodes and drop empty ones."""
+    """Merge adjacent text nodes, strip HTML tags, and drop empty ones."""
     if not nodes:
         return []
+    import re
+    _html_strip = re.compile(r"<[^>]+>")
     merged = []
     for node in nodes:
         if node["type"] == "text":
-            raw = node["raw"]
+            raw = _html_strip.sub("", node["raw"])
             if not raw:
                 continue
             if merged and merged[-1]["type"] == "text":
