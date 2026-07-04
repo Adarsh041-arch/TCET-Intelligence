@@ -4,7 +4,7 @@ import remarkGfm from 'remark-gfm';
 import {
   Send, Square, Paperclip, ChevronDown, ChevronRight, ChevronDownCircle,
   FileText, Sparkles, BookOpen, Database, Folder, Globe, Copy,
-  Search, CheckCircle,
+  Search, CheckCircle, Download, Eye,
 } from 'lucide-react';
 import { getHistory, chatStream, readSSEStream, uploadDocument, getApiKeyStatus, getUserDirectories } from '../services/api';
 import CodeBlock from './CodeBlock';
@@ -200,6 +200,8 @@ export default function ChatPanel({ sessionId, onSessionUpdate }) {
       let accumulated = '';
       let meta = null;
 
+      let documentInfo = null;
+
       for await (const data of readSSEStream(response)) {
         if (data.done) {
           meta = data;
@@ -215,6 +217,15 @@ export default function ChatPanel({ sessionId, onSessionUpdate }) {
           streamedRef.current = accumulated;
           setStreamText(accumulated);
         }
+        if (data.type === 'document') {
+          documentInfo = {
+            download_url: data.download_url,
+            preview_url: data.preview_url,
+            format: data.format,
+            filename: data.filename,
+            size: data.size,
+          };
+        }
       }
 
       // Finalize: add assistant message
@@ -224,6 +235,7 @@ export default function ChatPanel({ sessionId, onSessionUpdate }) {
         source: meta?.source,
         response_time: meta?.response_time,
         retrieved_docs: meta?.retrieved_docs,
+        document: documentInfo,
         created_at: new Date().toISOString(),
       };
 
@@ -427,6 +439,47 @@ export default function ChatPanel({ sessionId, onSessionUpdate }) {
                   )}
                 </div>
               )}
+              {msg.document && (
+                <div className="document-result" style={{ marginTop: '8px', padding: '10px', background: 'var(--bg-secondary)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                    <FileText size={16} color="var(--sage)" />
+                    <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{msg.document.filename}</span>
+                    {msg.document.size && (
+                      <span style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>
+                        {(msg.document.size / 1024).toFixed(1)} KB
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <a
+                      href={`http://192.168.29.134:8000${msg.document.download_url}`}
+                      download={msg.document.filename}
+                      className="btn btn-sm btn-primary"
+                      style={{ textDecoration: 'none', fontSize: '0.78rem' }}
+                    >
+                      <Download size={13} /> Download
+                    </a>
+                    {msg.document.preview_url && (
+                      <button
+                        className="btn btn-sm btn-ghost"
+                        onClick={() => {
+                          const baseUrl = 'http://192.168.29.134:8000';
+                          fetch(`${baseUrl}${msg.document.preview_url}`)
+                            .then(r => r.blob())
+                            .then(blob => {
+                              const url = URL.createObjectURL(blob);
+                              window.open(url, '_blank');
+                            })
+                            .catch(() => {});
+                        }}
+                        style={{ fontSize: '0.78rem' }}
+                      >
+                        <Eye size={13} /> Preview
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -530,6 +583,14 @@ export default function ChatPanel({ sessionId, onSessionUpdate }) {
               </span>
             </button>
           </div>
+          <button
+            className={`mode-chip ${mode === 'documentation' ? 'active' : ''}`}
+            data-mode="documentation"
+            onClick={() => setMode(mode === 'documentation' ? null : 'documentation')}
+            title="Generate documents from chat"
+          >
+            <FileText size={13} /> Documentation
+          </button>
           <button
             className={`mode-chip ${mode === 'general' ? 'active' : ''}`}
             data-mode="general"

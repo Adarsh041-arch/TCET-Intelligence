@@ -265,6 +265,23 @@ async def list_formats():
     }
 
 
+@router.post("/analyze")
+async def analyze_document(payload: dict):
+    """Extract features from an uploaded reference document for style matching."""
+    from app.services.doc_feature_extractor import extract_features
+    import os
+
+    filename = payload.get("filename", "")
+    docs_base = os.path.join(os.getcwd(), "data", "uploads")
+    fpath = os.path.join(docs_base, filename)
+
+    if not os.path.exists(fpath):
+        raise HTTPException(status_code=404, detail=f"Document not found: {filename}")
+
+    features = extract_features(fpath)
+    return {"success": True, "filename": filename, "features": features}
+
+
 @router.get("/templates", response_model=list[TemplateInfo])
 async def list_templates():
     return template_manager.list_templates()

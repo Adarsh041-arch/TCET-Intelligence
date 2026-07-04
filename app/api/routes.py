@@ -342,6 +342,8 @@ async def chat_stream(
             query_type = "sql"
         elif mode_override == "filesystem":
             query_type = "filesystem"
+        elif mode_override == "documentation":
+            query_type = "documentation"
         elif mode_override == "web":
             query_type = "web"
         else:
@@ -410,6 +412,36 @@ async def chat_stream(
                 yield f"data: {json.dumps({'token': chunk, 'done': False})}\n\n"
             except Exception as e:
                 chunk = f"Filesystem error: {e}"
+                full_response += chunk
+                yield f"data: {json.dumps({'token': chunk, 'done': False})}\n\n"
+        elif query_type == "documentation":
+            source = "documentation"
+            filesystem_handled = True
+            try:
+                from app.services.doc_agent import stream_documentation_agent
+                deadline = time.monotonic() + 180.0
+                async for event in stream_documentation_agent(
+                    query, history,
+                    attached_files=getattr(request, "attached_files", None),
+                    user_id=current_user["user_id"],
+                ):
+                    if time.monotonic() > deadline:
+                        raise asyncio.TimeoutError()
+                    if event["type"] == "thinking":
+                        yield f"data: {json.dumps({'thinking': event['text'], 'done': False})}\n\n"
+                    elif event["type"] == "token":
+                        full_response += event["text"]
+                        yield f"data: {json.dumps({'token': event['text'], 'done': False})}\n\n"
+                    elif event["type"] == "document":
+                        doc_info = event
+                        doc_info["done"] = False
+                        yield f"data: {json.dumps(doc_info)}\n\n"
+            except asyncio.TimeoutError:
+                chunk = "Document generation timed out after 3 minutes."
+                full_response += chunk
+                yield f"data: {json.dumps({'token': chunk, 'done': False})}\n\n"
+            except Exception as e:
+                chunk = f"Document generation error: {e}"
                 full_response += chunk
                 yield f"data: {json.dumps({'token': chunk, 'done': False})}\n\n"
         elif query_type == "web":

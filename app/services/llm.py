@@ -129,6 +129,18 @@ class LLMService:
             print(f"LLM generation error: {e}")
             return f"I apologize, but I encountered an error: {str(e)}"
 
+    def chat(self, messages: List[Dict[str, str]], options: Optional[Dict] = None) -> str:
+        """Send pre-built messages list to Ollama and return the response text."""
+        try:
+            opts = {"num_predict": 2048, "num_ctx": 4096, "temperature": 0.7}
+            if options:
+                opts.update(options)
+            response = ollama.chat(model=self.model, messages=messages, options=opts)
+            return response["message"]["content"]
+        except Exception as e:
+            print(f"LLM chat error: {e}")
+            return f"Error: {e}"
+
     def generate_stream(
         self,
         prompt: str,
