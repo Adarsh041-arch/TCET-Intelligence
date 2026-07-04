@@ -225,9 +225,10 @@ class ChatAgent:
         try:
             query = state["current_query"]
             chat_history = state.get("chat_history", [])[-self.max_history :]
+            relevant_docs = [d for d in state["retrieved_docs"] if d.get("similarity", 0) >= config.similarity_threshold]
             response = llm_service.generate_rag_response(
                 query=query,
-                retrieved_docs=state["retrieved_docs"][:3],
+                retrieved_docs=relevant_docs[:3],
                 chat_history=chat_history,
             )
             state["final_response"] = response

@@ -21,7 +21,8 @@ class DocumentProcessor:
         Path(self.upload_dir).mkdir(parents=True, exist_ok=True)
 
     def process_file(
-        self, file_content: bytes, filename: str, user_id: str
+        self, file_content: bytes, filename: str, user_id: str,
+        extra_metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         file_hash = vector_store.compute_file_hash(file_content)
 
@@ -44,15 +45,17 @@ class DocumentProcessor:
         if not chunks:
             return {"success": False, "message": "No content to index"}
 
-        metadatas = [
-            {
+        metadatas = []
+        for i in range(len(chunks)):
+            meta = {
                 "doc_id": doc_id,
                 "filename": filename,
                 "chunk_index": i,
                 "total_chunks": len(chunks),
             }
-            for i in range(len(chunks))
-        ]
+            if extra_metadata:
+                meta.update(extra_metadata)
+            metadatas.append(meta)
 
         success = vector_store.add_documents(chunks, metadatas, doc_id)
 
