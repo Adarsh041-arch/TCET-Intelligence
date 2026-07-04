@@ -20,3 +20,7 @@ langchain-mcp-adapters
 pandas
 openpyxl
 bcrypt
+python-pptx
+playwright
+fpdf2
+Pillow

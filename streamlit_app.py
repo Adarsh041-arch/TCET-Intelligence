@@ -487,6 +487,31 @@ def api_sql_schema(table_name):
         pass
     return {"success": False}
 
+def api_tcet_docs():
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/admin/tcet-docs", headers=get_headers(), timeout=10
+        )
+        if response.status_code == 200:
+            return response.json()
+    except:
+        pass
+    return {"files": [], "total": 0, "indexed": 0, "unindexed": 0}
+
+def api_index_tcet_docs(file_names):
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/admin/tcet-docs/index",
+            json={"file_names": file_names},
+            headers=get_headers(),
+            timeout=300,
+        )
+        if response.status_code == 200:
+            return response.json()
+    except:
+        pass
+    return {"results": []}
+
 def api_sql_query(query):
     try:
         response = requests.post(
@@ -634,6 +659,7 @@ def render_sidebar():
                 "chat": "💬 Chat Interface",
                 "upload": "📤 Index Documents",
                 "documents": "📚 Knowledge Base",
+                "tcet_docs": "📄 TCET Docs",
                 "database": "🗄️ Database Hub",
                 "sql": "🔗 SQL Console"
             }
@@ -1085,6 +1111,87 @@ def render_sql():
                         st.error(result.get("error", "Compilation failure."))
 
 # -------------------------------------------------------------
+# TCET Documents Page (Admin-Controlled Indexing)
+# -------------------------------------------------------------
+def render_tcet_docs():
+    st.markdown("<h2 style='margin-top: 0;'>📄 TCET Document Indexing</h2>", unsafe_allow_html=True)
+    st.markdown(
+        "<p style='color: #94a3b8; font-size: 0.95rem; margin-bottom: 25px;'>"
+        "Place files in <code style='color: #a5b4fc;'>data/tcet_docs/</code> on the server. "
+        "Scan the directory below, then select unindexed files to process them through "
+        "split → chunk → embed → vector storage. These documents are used in <strong>TCET ONLY</strong> mode.</p>",
+        unsafe_allow_html=True,
+    )
+
+    col1, col2, col3 = st.columns([2, 2, 1])
+    with col1:
+        scan = st.button("🔄 Rescan Directory", type="primary", use_container_width=True)
+    with col3:
+        refresh = st.button("🔄 Refresh Status", use_container_width=True)
+
+    if scan or refresh or "tcet_files" not in st.session_state:
+        with st.spinner("Scanning directory..."):
+            data = api_tcet_docs()
+            st.session_state.tcet_files = data.get("files", [])
+            st.session_state.tcet_total = data.get("total", 0)
+            st.session_state.tcet_indexed = data.get("indexed", 0)
+            st.session_state.tcet_unindexed = data.get("unindexed", 0)
+
+    total = st.session_state.get("tcet_total", 0)
+    indexed = st.session_state.get("tcet_indexed", 0)
+    unindexed = st.session_state.get("tcet_unindexed", 0)
+
+    mcol1, mcol2, mcol3 = st.columns(3)
+    with mcol1:
+        st.metric("Total Files", total)
+    with mcol2:
+        st.metric("Indexed", indexed)
+    with mcol3:
+        st.metric("Unindexed", unindexed)
+
+    st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+    st.markdown("<h4>Directory Files</h4>", unsafe_allow_html=True)
+
+    files = st.session_state.get("tcet_files", [])
+    if not files:
+        st.info("No files found in data/tcet_docs/. Add files to the directory and rescan.")
+        return
+
+    selected = []
+    for f in files:
+        col_a, col_b, col_c, col_d = st.columns([3, 2, 1, 2])
+        with col_a:
+            st.markdown(f"<span style='color:#e2e8f0;'>{f['file_name']}</span>", unsafe_allow_html=True)
+        with col_b:
+            size_kb = f.get("file_size", 0) / 1024
+            st.markdown(f"<span style='color:#64748b; font-size:0.85rem;'>{size_kb:.1f} KB</span>", unsafe_allow_html=True)
+        with col_c:
+            if f.get("indexed"):
+                st.markdown("<span style='color:#34d399; font-weight:600;'>✅ Indexed</span>", unsafe_allow_html=True)
+            else:
+                st.markdown("<span style='color:#fbbf24; font-weight:600;'>⏳ Pending</span>", unsafe_allow_html=True)
+        with col_d:
+            if not f.get("indexed"):
+                if st.checkbox("Index", key=f"cb_{f['file_name']}", label_visibility="collapsed"):
+                    selected.append(f["file_name"])
+
+        st.markdown("<div style='border-bottom:1px solid #1e293b; margin:4px 0;'></div>", unsafe_allow_html=True)
+
+    if selected:
+        st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+        if st.button(f"📥 Index Selected ({len(selected)} files)", type="primary"):
+            with st.spinner("Processing files... This may take a while."):
+                result = api_index_tcet_docs(selected)
+                success_count = sum(1 for r in result.get("results", []) if r.get("success"))
+                fail_count = len(result.get("results", [])) - success_count
+                if success_count:
+                    st.success(f"Successfully indexed {success_count} file(s).")
+                if fail_count:
+                    st.error(f"{fail_count} file(s) failed to index.")
+                st.session_state.pop("tcet_files", None)
+                st.rerun()
+
+# -------------------------------------------------------------
 # Main Application Flow
 # -------------------------------------------------------------
 def main():
@@ -1110,6 +1217,8 @@ def main():
                 render_upload()
             elif st.session_state.page == "documents":
                 render_documents()
+            elif st.session_state.page == "tcet_docs":
+                render_tcet_docs()
             elif st.session_state.page == "database":
                 render_database()
             elif st.session_state.page == "sql":
