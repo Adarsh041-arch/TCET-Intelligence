@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
-  MessageSquare, Plus, Upload, BookOpen, Database, Terminal, LogOut, Zap, ChevronLeft, FileText, Trash2,
+  MessageSquare, Plus, Upload, BookOpen, Database, Terminal, LogOut, Zap, ChevronLeft, FileText, MoreVertical, Trash2, X,
 } from 'lucide-react';
 
 const ADMIN_PAGES = [
@@ -24,6 +25,30 @@ export default function Sidebar({
   onToggleSidebar,
 }) {
   const { user, logout, isAdmin } = useAuth();
+  const [openMenuId, setOpenMenuId] = useState(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+
+  const handleMenuClick = (e, sessionId) => {
+    e.stopPropagation();
+    setOpenMenuId(openMenuId === sessionId ? null : sessionId);
+  };
+
+  const handleDeleteClick = (e, sessionId) => {
+    e.stopPropagation();
+    setOpenMenuId(null);
+    setConfirmDeleteId(sessionId);
+  };
+
+  const handleConfirmDelete = () => {
+    if (confirmDeleteId) {
+      onDeleteSession(confirmDeleteId);
+      setConfirmDeleteId(null);
+    }
+  };
+
+  const handleClickOutside = () => {
+    setOpenMenuId(null);
+  };
 
   return (
     <aside className={`sidebar ${!sidebarOpen ? 'collapsed' : ''}`}>
@@ -65,18 +90,34 @@ export default function Sidebar({
               <div
                 key={s.session_id}
                 className={`session-item ${isActive ? 'active' : ''}`}
-                onClick={() => onSelectSession(s.session_id)}
+                onClick={() => { setOpenMenuId(null); onSelectSession(s.session_id); }}
                 title={name}
               >
                 <MessageSquare size={14} />
                 <span>{truncated}</span>
-                <button
-                  className="session-delete-btn"
-                  onClick={(e) => { e.stopPropagation(); onDeleteSession(s.session_id); }}
-                  title="Delete conversation"
-                >
-                  <Trash2 size={12} />
-                </button>
+                <div className="session-menu-container">
+                  <button
+                    className="session-menu-btn"
+                    onClick={(e) => handleMenuClick(e, s.session_id)}
+                    title="More"
+                  >
+                    <MoreVertical size={13} />
+                  </button>
+                  {openMenuId === s.session_id && (
+                    <>
+                      <div className="session-menu-backdrop" onClick={handleClickOutside} />
+                      <div className="session-menu-dropdown">
+                        <button
+                          className="session-menu-item danger"
+                          onClick={(e) => handleDeleteClick(e, s.session_id)}
+                        >
+                          <Trash2 size={13} />
+                          <span>Delete</span>
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
             );
           })
@@ -115,6 +156,24 @@ export default function Sidebar({
         </button>
       </div>
       </div>
+
+      {confirmDeleteId && (
+        <div className="modal-overlay" onClick={() => setConfirmDeleteId(null)}>
+          <div className="modal-content glass-card confirm-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Delete conversation?</h3>
+              <button className="modal-close-btn" onClick={() => setConfirmDeleteId(null)}><X size={18} /></button>
+            </div>
+            <div className="modal-body">
+              <p>This action cannot be undone. All messages in this conversation will be permanently deleted.</p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setConfirmDeleteId(null)}>Cancel</button>
+              <button className="btn btn-danger" onClick={handleConfirmDelete}>Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
     </aside>
   );
 }

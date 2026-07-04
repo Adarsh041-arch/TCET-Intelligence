@@ -452,6 +452,77 @@ textarea.input-field {
   border-left: 3px solid var(--sage);
 }
 
+.session-menu-container {
+  position: relative;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+
+.session-menu-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  opacity: 0;
+  transition: opacity var(--transition);
+}
+.session-item:hover .session-menu-btn {
+  opacity: 1;
+}
+.session-menu-btn:hover {
+  color: var(--text-primary);
+  background-color: var(--bg-hover);
+}
+
+.session-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+}
+
+.session-menu-dropdown {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 100;
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  min-width: 120px;
+  overflow: hidden;
+}
+
+.session-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--transition);
+}
+.session-menu-item:hover {
+  background-color: var(--bg-hover);
+  color: var(--text-primary);
+}
+.session-menu-item.danger {
+  color: var(--red);
+}
+.session-menu-item.danger:hover {
+  background-color: rgba(217, 116, 116, 0.1);
+}
+
 .sidebar-nav {
   padding: 0 12px;
   margin-top: 8px;
@@ -1736,6 +1807,9 @@ textarea.input-field {
   max-height: 85vh;
   overflow-y: auto;
   border-radius: var(--radius-lg);
+}
+.modal-content.confirm-modal {
+  width: 380px;
 }
 
 .modal-header {
