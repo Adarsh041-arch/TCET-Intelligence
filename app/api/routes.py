@@ -334,17 +334,27 @@ async def chat_stream(
             "delete", "list contents", "contents", "make directory", "text file",
             "open", ".txt", ".csv", ".json"
         ]
-        # Mode override from frontend toggles
-        mode_override = getattr(request, "mode", None)
-        if mode_override == "rag" or getattr(request, "attached_files", None):
+        # Mode override from frontend toggles — normalise to list
+        raw_mode = getattr(request, "mode", None)
+        if isinstance(raw_mode, list):
+            active_modes = raw_mode
+        elif isinstance(raw_mode, str) and raw_mode:
+            active_modes = [raw_mode]
+        else:
+            active_modes = []
+
+        # ── Multi-mode orchestrator ───────────────────────────
+        if len(active_modes) > 1:
+            query_type = "multi"
+        elif active_modes and active_modes[0] == "rag" or getattr(request, "attached_files", None):
             query_type = "rag"
-        elif mode_override == "sql":
+        elif active_modes and active_modes[0] == "sql":
             query_type = "sql"
-        elif mode_override == "filesystem":
+        elif active_modes and active_modes[0] == "filesystem":
             query_type = "filesystem"
-        elif mode_override == "documentation":
+        elif active_modes and active_modes[0] == "documentation":
             query_type = "documentation"
-        elif mode_override == "web":
+        elif active_modes and active_modes[0] == "web":
             query_type = "web"
         else:
             # "Else" mode (mode is "general" or None/nothing turned on)
@@ -362,6 +372,8 @@ async def chat_stream(
             else:
                 query_type = "general"
 
+        single_mode = active_modes[0] if len(active_modes) == 1 else None
+
         if query_type == "rag" or getattr(request, "attached_files", None):
             if not retrieved_docs:
                 try:
@@ -371,7 +383,7 @@ async def chat_stream(
                     if getattr(request, "attached_files", None):
                         filter_dict = {"filename": {"$in": request.attached_files}}
                         threshold = 0.1
-                    elif mode_override == "rag":
+                    elif single_mode == "rag":
                         tcet_filenames = vector_store.get_all_filenames(where={"source": "tcet_managed"})
                         relevant = llm_service.select_relevant_tcet_docs(query, tcet_filenames)
                         if relevant and len(relevant) < len(tcet_filenames):
@@ -389,7 +401,35 @@ async def chat_stream(
         full_response = ""
         filesystem_handled = False
 
-        if query_type == "filesystem":
+        if query_type == "multi":
+            source = "multi"
+            filesystem_handled = True
+            try:
+                from app.services.agent_orchestrator import stream_multi_agent
+                deadline = time.monotonic() + 180.0
+                async for event in stream_multi_agent(
+                    query, history, active_modes, current_user["user_id"],
+                ):
+                    if time.monotonic() > deadline:
+                        raise asyncio.TimeoutError()
+                    if event["type"] == "thinking":
+                        yield f"data: {json.dumps({'thinking': event['text'], 'done': False})}\n\n"
+                    elif event["type"] == "milestone":
+                        yield f"data: {json.dumps({'milestone': event['text'], 'done': False})}\n\n"
+                    elif event["type"] == "token":
+                        full_response += event["text"]
+                        yield f"data: {json.dumps({'token': event['text'], 'done': False})}\n\n"
+                    elif event["type"] == "final":
+                        pass  # we handle final below
+            except asyncio.TimeoutError:
+                chunk = "Multi-agent operation timed out after 3 minutes."
+                full_response += chunk
+                yield f"data: {json.dumps({'token': chunk, 'done': False})}\n\n"
+            except Exception as e:
+                chunk = f"Multi-agent error: {e}"
+                full_response += chunk
+                yield f"data: {json.dumps({'token': chunk, 'done': False})}\n\n"
+        elif query_type == "filesystem":
             source = "filesystem"
             filesystem_handled = True
             try:
@@ -510,7 +550,7 @@ async def chat_stream(
             )
         else:
             source = "general"
-            if mode_override == "rag":
+            if raw_mode == "rag" or (isinstance(raw_mode, list) and "rag" in raw_mode):
                 sys_prompt = RAG_FALLBACK_PROMPT
             else:
                 sys_prompt = GENERAL_CHAT_PROMPT

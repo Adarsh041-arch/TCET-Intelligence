@@ -50,9 +50,10 @@ export default function ChatPanel({ sessionId, onSessionUpdate }) {
   const [_streamMeta, setStreamMeta] = useState(null);
   const [expandedDocs, setExpandedDocs] = useState({});
   const [files, setFiles] = useState([]);
-  const [mode, setMode] = useState(null);
+  const [activeModes, setActiveModes] = useState([]);
   const [thinking, setThinking] = useState(false);
   const [thinkingSteps, setThinkingSteps] = useState([]);
+  const [milestones, setMilestones] = useState([]);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const [toast, setToast] = useState(null);
   const messagesEndRef = useRef(null);
@@ -166,6 +167,7 @@ export default function ChatPanel({ sessionId, onSessionUpdate }) {
     setStreamText('');
     setStreamMeta(null);
     setThinkingSteps([]);
+    setMilestones([]);
 
     // Upload any attached files first
     let attachedFileNames = null;
@@ -189,7 +191,7 @@ export default function ChatPanel({ sessionId, onSessionUpdate }) {
     setThinking(true);
 
     try {
-      const { promise, controller } = chatStream(sessionId, msg, attachedFileNames, mode);
+      const { promise, controller } = chatStream(sessionId, msg, attachedFileNames, activeModes);
       controllerRef.current = controller;
 
       const response = await promise;
@@ -209,6 +211,10 @@ export default function ChatPanel({ sessionId, onSessionUpdate }) {
         }
         if (data.thinking) {
           setThinkingSteps((prev) => [...prev, data.thinking]);
+          continue;
+        }
+        if (data.milestone) {
+          setMilestones((prev) => [...prev, data.milestone]);
           continue;
         }
         if (data.token) {
@@ -484,11 +490,21 @@ export default function ChatPanel({ sessionId, onSessionUpdate }) {
           </div>
         ))}
 
-        {/* Streaming in progress — shows thinking trace + token stream */}
-        {streaming && (thinkingSteps.length > 0 || streamText || thinking) && (
+        {/* Streaming in progress — shows thinking trace + milestones + token stream */}
+        {streaming && (thinkingSteps.length > 0 || milestones.length > 0 || streamText || thinking) && (
           <div className="message message-assistant">
             <div className="message-avatar">AI</div>
             <div className="message-body">
+              {milestones.length > 0 && (
+                <div className="milestone-list">
+                  {milestones.map((ms, i) => (
+                    <div key={i} className="milestone-item">
+                      <span className="milestone-icon">✦</span>
+                      <span className="milestone-text">{ms}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               {thinkingSteps.length > 0 && (
                 <div className="thinking-trace">
                   {thinkingSteps.map((step, i) => (
@@ -545,29 +561,42 @@ export default function ChatPanel({ sessionId, onSessionUpdate }) {
           </div>
         )}
 
-        {/* Mode toggles */}
+        {/* Mode toggles — multi-select with mutual-exclusivity rules */}
         <div className="mode-toggles">
           <button
-            className={`mode-chip ${mode === 'rag' ? 'active' : ''}`}
+            className={`mode-chip ${activeModes.includes('rag') ? 'active' : ''}`}
             data-mode="rag"
-            onClick={() => setMode(mode === 'rag' ? null : 'rag')}
+            onClick={() => {
+              setActiveModes((prev) => {
+                if (prev.includes('rag')) return prev.filter((x) => x !== 'rag');
+                return [...prev.filter((x) => x !== 'general'), 'rag'];
+              });
+            }}
             title="Search indexed college documents"
           >
             <BookOpen size={13} /> TCET ONLY
           </button>
           <button
-            className={`mode-chip ${mode === 'sql' ? 'active' : ''}`}
+            className={`mode-chip ${activeModes.includes('sql') ? 'active' : ''}`}
             data-mode="sql"
-            onClick={() => setMode(mode === 'sql' ? null : 'sql')}
+            onClick={() => {
+              setActiveModes((prev) =>
+                prev.includes('sql') ? prev.filter((x) => x !== 'sql') : [...prev, 'sql']
+              );
+            }}
             title="Query connected databases"
           >
             <Database size={13} /> SQL
           </button>
           <div className="mode-chip-group">
             <button
-              className={`mode-chip ${mode === 'filesystem' ? 'active' : ''}`}
+              className={`mode-chip ${activeModes.includes('filesystem') ? 'active' : ''}`}
               data-mode="filesystem"
-              onClick={() => setMode(mode === 'filesystem' ? null : 'filesystem')}
+              onClick={() => {
+                setActiveModes((prev) =>
+                  prev.includes('filesystem') ? prev.filter((x) => x !== 'filesystem') : [...prev, 'filesystem']
+                );
+              }}
               title="Read and write files"
             >
               <Folder size={13} /> Filesystem
@@ -584,35 +613,51 @@ export default function ChatPanel({ sessionId, onSessionUpdate }) {
             </button>
           </div>
           <button
-            className={`mode-chip ${mode === 'documentation' ? 'active' : ''}`}
+            className={`mode-chip ${activeModes.includes('documentation') ? 'active' : ''}`}
             data-mode="documentation"
-            onClick={() => setMode(mode === 'documentation' ? null : 'documentation')}
+            onClick={() => {
+              setActiveModes((prev) =>
+                prev.includes('documentation') ? prev.filter((x) => x !== 'documentation') : [...prev, 'documentation']
+              );
+            }}
             title="Generate documents from chat"
           >
             <FileText size={13} /> Documentation
           </button>
           <button
-            className={`mode-chip ${mode === 'general' ? 'active' : ''}`}
+            className={`mode-chip ${activeModes.includes('general') ? 'active' : ''}`}
             data-mode="general"
-            onClick={() => setMode(mode === 'general' ? null : 'general')}
+            onClick={() => {
+              setActiveModes((prev) => {
+                if (prev.includes('general')) return prev.filter((x) => x !== 'general');
+                return [...prev.filter((x) => x !== 'rag'), 'general'];
+              });
+            }}
             title="General conversation"
           >
             <Globe size={13} /> General
           </button>
           <button
-            className={`mode-chip ${mode === 'web' ? 'active' : ''}`}
+            className={`mode-chip ${activeModes.includes('web') ? 'active' : ''}`}
             data-mode="web"
             onClick={() => {
               if (!webKeyStatus?.has_key) {
                 setShowKeyModal(true);
               } else {
-                setMode(mode === 'web' ? null : 'web');
+                setActiveModes((prev) =>
+                  prev.includes('web') ? prev.filter((x) => x !== 'web') : [...prev, 'web']
+                );
               }
             }}
             title={webKeyStatus?.has_key ? 'Search the web (configured)' : 'Configure web search'}
           >
             <Search size={13} /> Web{webKeyStatus?.has_key ? <CheckCircle size={13} className="green-tick" /> : null}
           </button>
+          {activeModes.length > 1 && (
+            <span className="multi-mode-badge" title="Multi-mode active: the AI will plan and coordinate across selected tools">
+              <Sparkles size={13} /> Multi
+            </span>
+          )}
         </div>
 
         <div className="chat-input-wrapper">

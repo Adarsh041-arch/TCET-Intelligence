@@ -1736,6 +1736,46 @@ textarea.input-field {
   animation: fadeIn 0.2s ease-in;
 }
 
+/* ─── Milestones ─────────────────────────────────────────── */
+.milestone-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.milestone-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--sage);
+  animation: fadeIn 0.25s ease-in;
+}
+.milestone-icon {
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+.milestone-text {
+  font-weight: 500;
+}
+
+/* ─── Multi-mode badge ───────────────────────────────────── */
+.multi-mode-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  background: linear-gradient(135deg, rgba(174, 141, 239, 0.2), rgba(109, 179, 160, 0.2));
+  border: 1px solid var(--sage);
+  color: var(--sage);
+  white-space: nowrap;
+  cursor: default;
+}
+
 /* ─── Thinking Dots ──────────────────────────────────────── */
 .thinking-dots {
   display: flex;

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Union
 from datetime import datetime
 
 
@@ -37,7 +37,7 @@ class MessageRequest(BaseModel):
     session_id: str
     message: str = Field(..., min_length=1)
     attached_files: Optional[List[str]] = []
-    mode: Optional[str] = None
+    mode: Optional[Union[str, List[str]]] = None
 
 
 class MessageResponse(BaseModel):

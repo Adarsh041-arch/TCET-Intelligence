@@ -91,14 +91,14 @@ export async function getHistory(sessionId) {
 }
 
 // ── Chat (SSE Streaming) ────────────────────────────────────
-export function chatStream(sessionId, message, attachedFiles = null, mode = null) {
+export function chatStream(sessionId, message, attachedFiles = null, modes = null) {
   const controller = new AbortController();
   const body = { session_id: sessionId, message };
   if (attachedFiles && attachedFiles.length > 0) {
     body.attached_files = attachedFiles;
   }
-  if (mode) {
-    body.mode = mode;
+  if (modes && modes.length > 0) {
+    body.mode = modes.length === 1 ? modes[0] : modes;
   }
 
   const promise = fetch(`${API_BASE}/chat/stream`, {
