@@ -1,10 +1,12 @@
 DOCUMENT_QUERY_DECISION_PROMPT = (
+    "You have access to these TCET documents:\n{filenames}\n\n"
     "Determine if the user query is asking about a specific document's full content "
     "(like \"show me the syllabus\", \"read the admission policy\", \"give me the full fees structure\", "
     "\"what does the attendance document say\", \"display the file about rules\") "
     "OR asking about a general topic "
     "(like \"what is the attendance policy\", \"tell me about fees\", \"explain admission process\").\n"
-    "Respond with exactly 'DOCUMENT' or 'TOPIC'.\n"
+    "If the query mentions or implies any of the listed documents, respond with 'DOCUMENT'.\n"
+    "Otherwise respond with 'TOPIC'.\n"
     "Query: {query}\n"
     "Answer:"
 )

@@ -279,12 +279,19 @@ class LLMService:
             "whole document", "print the", "get the content of",
             "show content", "show all", "load all", "read the file",
             "give me everything in", "show full", "display full",
+            "show the syllabus", "read the syllabus",
+            "show fees structure", "fee document",
+            "admission document", "read admission policy",
+            "attendance document", "read notice",
+            "show timetable", "read the policy",
         ]
         for indicator in doc_indicators:
             if indicator in query_lower:
                 return True
 
-        prompt = DOCUMENT_QUERY_DECISION_PROMPT.format(query=query)
+        filenames = vector_store.get_all_filenames()
+        filenames_str = "\n".join(f"- {f}" for f in filenames) if filenames else "No documents available."
+        prompt = DOCUMENT_QUERY_DECISION_PROMPT.format(filenames=filenames_str, query=query)
         try:
             response = ollama.generate(
                 model=self.model,
