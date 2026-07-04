@@ -144,7 +144,10 @@ def build_tools(modes: List[str], user_id: Optional[str] = None) -> list:
         from app.document_generation.storage.file_storage import file_storage
         from app.document_generation.registry import GeneratorRegistry
         from app.document_generation.templates.template_manager import template_manager
+        from app.prompts.documentation import DOCUMENTATION_SYSTEM_PROMPT
         import uuid
+
+        V2_FORMATS = {"docx", "pptx", "xlsx"}
 
         @tool
         def generate_document(description: str, format: str = "docx") -> str:
@@ -158,8 +161,10 @@ def build_tools(modes: List[str], user_id: Optional[str] = None) -> list:
                 from app.services.doc_agent import _detect_format
                 fmt = _detect_format(description) or format
                 effective_fmt = fmt if fmt in ("docx", "pdf", "pptx", "xlsx") else "docx"
+                is_v2 = effective_fmt in V2_FORMATS
+                reg_fmt = f"{effective_fmt}-v2" if is_v2 else effective_fmt
                 markdown_content = llm_service.chat([
-                    {"role": "system", "content": "You are a professional document writer. Generate markdown content for a document based on the user's description. Output ONLY valid markdown, no HTML tags."},
+                    {"role": "system", "content": DOCUMENTATION_SYSTEM_PROMPT},
                     {"role": "user", "content": description},
                 ])
                 if markdown_content.startswith("```"):
@@ -173,9 +178,9 @@ def build_tools(modes: List[str], user_id: Optional[str] = None) -> list:
                 job_id = str(uuid.uuid4())
                 ext = f".{effective_fmt}"
                 filename = f"document_{job_id[:8]}{ext}"
-                gen = GeneratorRegistry.get(effective_fmt, "v2")
+                gen = GeneratorRegistry.get(reg_fmt)
                 template = template_manager.get_template("default")
-                result = gen.generate(markdown_content, {})
+                result = gen.generate(markdown_content, template, {})
                 file_storage.store_file(result, filename, job_id)
                 return f"Document generated: {filename}"
             except Exception as e:
