@@ -17,6 +17,9 @@ class ChatService:
     def get_user_sessions(self, user_id: str) -> List[Dict[str, Any]]:
         return db.get_user_sessions(user_id)
 
+    def delete_session(self, session_id: str) -> bool:
+        return db.delete_session(session_id)
+
     def get_session_history(self, session_id: str) -> List[Dict[str, Any]]:
         return db.get_session_messages(session_id)
 

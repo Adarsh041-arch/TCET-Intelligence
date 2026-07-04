@@ -189,6 +189,20 @@ async def get_sessions(current_user: dict = Depends(get_current_user)):
     return {"sessions": sessions}
 
 
+@router.delete("/sessions/{session_id}")
+async def delete_session(
+    session_id: str, current_user: dict = Depends(get_current_user)
+):
+    session = db.get_session(session_id)
+    if not session or session["user_id"] != current_user["user_id"]:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Session not found"
+        )
+
+    chat_service.delete_session(session_id)
+    return {"success": True}
+
+
 @router.get("/sessions/{session_id}/history")
 async def get_session_history(
     session_id: str, current_user: dict = Depends(get_current_user)

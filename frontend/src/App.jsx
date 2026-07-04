@@ -9,7 +9,7 @@ import DocumentsPage from './components/DocumentsPage';
 import DatabasePage from './components/DatabasePage';
 import SQLConsolePage from './components/SQLConsolePage';
 import TCETDocsPage from './components/TCETDocsPage';
-import { getSessions, createSession } from './services/api';
+import { getSessions, createSession, deleteSession } from './services/api';
 
 function MainLayout() {
   const { isAdmin } = useAuth();
@@ -54,6 +54,18 @@ function MainLayout() {
     }
   };
 
+  const handleDeleteSession = async (sessionId) => {
+    try {
+      await deleteSession(sessionId);
+      if (activeSessionId === sessionId) {
+        setActiveSessionId(null);
+      }
+      await loadSessions();
+    } catch {
+      // silent
+    }
+  };
+
   const handleSelectSession = (sessionId) => {
     setActiveSessionId(sessionId);
     setActivePage('chat');
@@ -90,6 +102,7 @@ function MainLayout() {
         activePage={activePage}
         onNewChat={handleNewChat}
         onSelectSession={handleSelectSession}
+        onDeleteSession={handleDeleteSession}
         onSelectPage={setActivePage}
         sidebarOpen={sidebarOpen}
         onToggleSidebar={handleToggleSidebar}

@@ -1,6 +1,6 @@
 import { useAuth } from '../context/AuthContext';
 import {
-  MessageSquare, Plus, Upload, BookOpen, Database, Terminal, LogOut, Zap, ChevronLeft, FileText,
+  MessageSquare, Plus, Upload, BookOpen, Database, Terminal, LogOut, Zap, ChevronLeft, FileText, Trash2,
 } from 'lucide-react';
 
 const ADMIN_PAGES = [
@@ -19,6 +19,7 @@ export default function Sidebar({
   onNewChat,
   onSelectSession,
   onSelectPage,
+  onDeleteSession,
   sidebarOpen,
   onToggleSidebar,
 }) {
@@ -69,6 +70,13 @@ export default function Sidebar({
               >
                 <MessageSquare size={14} />
                 <span>{truncated}</span>
+                <button
+                  className="session-delete-btn"
+                  onClick={(e) => { e.stopPropagation(); onDeleteSession(s.session_id); }}
+                  title="Delete conversation"
+                >
+                  <Trash2 size={12} />
+                </button>
               </div>
             );
           })

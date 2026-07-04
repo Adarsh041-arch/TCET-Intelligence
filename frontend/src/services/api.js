@@ -81,6 +81,10 @@ export async function createSession(sessionName) {
   });
 }
 
+export async function deleteSession(sessionId) {
+  return request(`/sessions/${sessionId}`, { method: 'DELETE' });
+}
+
 export async function getHistory(sessionId) {
   const data = await request(`/sessions/${sessionId}/history`);
   return data.messages || [];
