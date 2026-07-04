@@ -202,6 +202,18 @@ export async function sqlQuery(query) {
   return res.json();
 }
 
+// ── TCET Documents (Admin) ──────────────────────────────────
+export async function getTcetDocs() {
+  return request('/admin/tcet-docs');
+}
+
+export async function indexTcetDocs(fileNames) {
+  return request('/admin/tcet-docs/index', {
+    method: 'POST',
+    body: { file_names: fileNames },
+  });
+}
+
 // ── API Keys (Web Search) ────────────────────────────────────
 export async function getApiKeyStatus() {
   return request('/auth/api-key');
@@ -235,4 +247,43 @@ export async function deleteUserDirectory(directoryPath) {
     method: 'DELETE',
     body: { directory_path: directoryPath },
   });
+}
+
+// ── Document Generation ─────────────────────────────────────
+export async function generateDocument({ markdown, html, format, template_id, metadata, filename }) {
+  return request('/document-gen/generate', {
+    method: 'POST',
+    body: {
+      markdown: markdown || null,
+      html: html || null,
+      format: format || 'docx',
+      template_id: template_id || 'default',
+      metadata: metadata || {},
+      filename: filename || null,
+    },
+  });
+}
+
+export async function previewDocument({ markdown, html, format, template_id }) {
+  return request('/document-gen/preview', {
+    method: 'POST',
+    body: {
+      markdown: markdown || null,
+      html: html || null,
+      format: format || 'docx',
+      template_id: template_id || 'default',
+    },
+  });
+}
+
+export async function getDocumentFormats() {
+  return request('/document-gen/formats');
+}
+
+export async function getTemplates() {
+  return request('/document-gen/templates');
+}
+
+export async function getTemplate(templateId) {
+  return request(`/document-gen/templates/${templateId}`);
 }
