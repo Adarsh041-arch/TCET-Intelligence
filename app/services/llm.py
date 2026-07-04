@@ -1,9 +1,15 @@
 import os
 import hashlib
 import time
+from collections import Counter
 from typing import Optional, List, Dict, Any, Generator
 import ollama
 from app.core.config import config
+from app.prompts.general import SYSTEM_CONTEXT_PROMPT, SYSTEM_NO_CONTEXT_PROMPT
+from app.prompts.rag import RAG_STAFF_PROMPT, DOCUMENT_QUERY_DECISION_PROMPT
+from app.services.vector_store import vector_store
+from app.prompts.sql import SQL_SYSTEM_PROMPT, SQL_QUERY_TEMPLATE
+from app.prompts.web import WEB_SEARCH_DECISION_PROMPT
 
 
 os.environ["OLLAMA_HOST"] = config.ollama_base_url
@@ -74,20 +80,9 @@ class LLMService:
         if system_prompt:
             sys = system_prompt
         elif context:
-            sys = (
-                "You are an AI assistant for TCET (Thakur College of Engineering and Technology). "
-                "Provide accurate information about courses, attendance, results, college procedures, "
-                "faculty, campus facilities, and general educational queries. "
-                "Use the provided context to answer questions accurately. "
-                "If the context doesn't contain relevant information, say so."
-            )
+            sys = SYSTEM_CONTEXT_PROMPT
         else:
-            sys = (
-                "You are an AI assistant for TCET (Thakur College of Engineering and Technology). "
-                "Help students with questions about courses, attendance, results, college procedures, "
-                "faculty, campus facilities, syllabus, exams, and general educational queries. "
-                "Provide accurate and helpful responses."
-            )
+            sys = SYSTEM_NO_CONTEXT_PROMPT
 
         messages = [{"role": "system", "content": sys}]
 
@@ -95,17 +90,15 @@ class LLMService:
             for msg in chat_history[-MAX_HISTORY:]:
                 messages.append({"role": msg["role"], "content": msg["content"]})
 
-        user_prefix = f"[SYSTEM INSTRUCTION: {sys}]\n\n"
-
         if context:
             messages.append(
                 {
                     "role": "user",
-                    "content": f"{user_prefix}Context:\n{context}\n\nQuestion: {prompt}",
+                    "content": f"Context:\n{context}\n\nQuestion: {prompt}",
                 }
             )
         else:
-            messages.append({"role": "user", "content": f"{user_prefix}{prompt}"})
+            messages.append({"role": "user", "content": prompt})
 
         return messages
 
@@ -125,7 +118,10 @@ class LLMService:
 
         try:
             messages = self._build_messages(prompt, context, chat_history, system_prompt)
-            response = ollama.chat(model=self.model, messages=messages)
+            response = ollama.chat(
+                model=self.model, messages=messages,
+                options={"num_predict": 2048, "num_ctx": 4096}
+            )
             result = response["message"]["content"]
             self._cache_response(cache_key, result)
             return result
@@ -142,7 +138,10 @@ class LLMService:
     ) -> Generator[str, None, None]:
         try:
             messages = self._build_messages(prompt, context, chat_history, system_prompt)
-            stream = ollama.chat(model=self.model, messages=messages, stream=True)
+            stream = ollama.chat(
+                model=self.model, messages=messages, stream=True,
+                options={"num_predict": 2048, "num_ctx": 4096, "temperature": 0.7}
+            )
             for chunk in stream:
                 if "message" in chunk and "content" in chunk["message"]:
                     yield chunk["message"]["content"]
@@ -156,23 +155,29 @@ class LLMService:
         chat_history: Optional[List[Dict[str, str]]] = None,
     ) -> Generator[str, None, None]:
         if retrieved_docs:
-            docs_to_use = retrieved_docs[:3]
+            is_doc_query = self._is_document_query(query)
+            if is_doc_query:
+                filename = self._identify_document(retrieved_docs)
+                if filename:
+                    all_chunks = vector_store.get_all_chunks_by_filename(filename)
+                    if all_chunks:
+                        docs_to_use = all_chunks
+                    else:
+                        docs_to_use = [d for d in retrieved_docs if d.get("similarity", 0) >= config.similarity_threshold][:config.top_k]
+                else:
+                    docs_to_use = [d for d in retrieved_docs if d.get("similarity", 0) >= config.similarity_threshold][:config.top_k]
+            else:
+                docs_to_use = [d for d in retrieved_docs if d.get("similarity", 0) >= config.similarity_threshold][:config.top_k]
             context = "\n\n".join(
                 [
                     f"Document {i + 1}:\n{doc['content']}"
                     for i, doc in enumerate(docs_to_use)
                 ]
-            )
+            ) if docs_to_use else None
         else:
             context = None
 
-        system_prompt = (
-            "You are an AI assistant for TCET (Thakur College of Engineering and Technology). "
-            "Use the provided document context to answer questions accurately. "
-            "Reference specific information from the documents when available."
-        )
-
-        messages = [{"role": "system", "content": system_prompt}]
+        messages = [{"role": "system", "content": RAG_STAFF_PROMPT}]
         if chat_history:
             for msg in chat_history[-MAX_HISTORY:]:
                 messages.append({"role": msg["role"], "content": msg["content"]})
@@ -185,7 +190,10 @@ class LLMService:
             messages.append({"role": "user", "content": query})
 
         try:
-            stream = ollama.chat(model=self.model, messages=messages, stream=True)
+            stream = ollama.chat(
+                model=self.model, messages=messages, stream=True,
+                options={"num_predict": 2048, "num_ctx": 4096, "temperature": 0.7}
+            )
             for chunk in stream:
                 if "message" in chunk and "content" in chunk["message"]:
                     yield chunk["message"]["content"]
@@ -193,22 +201,11 @@ class LLMService:
             yield f"I apologize, but I encountered an error: {str(e)}"
 
     def generate_sql_query(self, question: str, table_info: str) -> str:
-        prompt = f"""Given the following database schema, convert this natural language question into a SQL query.
-Only return the SQL query, nothing else.
-
-Schema:
-{table_info}
-
-Question: {question}
-
-SQL Query:"""
+        prompt = SQL_QUERY_TEMPLATE.format(table_info=table_info, question=question)
 
         try:
             messages = [
-                {
-                    "role": "system",
-                    "content": "You are a SQL expert. Return ONLY the SQL query, no explanation.",
-                },
+                {"role": "system", "content": SQL_SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ]
             response = ollama.chat(model=self.model, messages=messages)
@@ -248,16 +245,63 @@ SQL Query:"""
         chat_history: Optional[List[Dict[str, str]]] = None,
     ) -> str:
         if retrieved_docs:
-            docs_to_use = retrieved_docs[:3]
+            is_doc_query = self._is_document_query(query)
+            if is_doc_query:
+                filename = self._identify_document(retrieved_docs)
+                if filename:
+                    all_chunks = vector_store.get_all_chunks_by_filename(filename)
+                    if all_chunks:
+                        docs_to_use = all_chunks
+                    else:
+                        docs_to_use = [d for d in retrieved_docs if d.get("similarity", 0) >= config.similarity_threshold][:config.top_k]
+                else:
+                    docs_to_use = [d for d in retrieved_docs if d.get("similarity", 0) >= config.similarity_threshold][:config.top_k]
+            else:
+                docs_to_use = [d for d in retrieved_docs if d.get("similarity", 0) >= config.similarity_threshold][:config.top_k]
             context = "\n\n".join(
                 [
                     f"Document {i + 1}:\n{doc['content']}"
                     for i, doc in enumerate(docs_to_use)
                 ]
-            )
+            ) if docs_to_use else None
         else:
             context = None
-        return self.generate_response(query, context, chat_history)
+
+        return self.generate_response(query, context, chat_history, system_prompt=RAG_STAFF_PROMPT)
+
+    def _is_document_query(self, query: str) -> bool:
+        query_lower = query.lower().strip()
+        doc_indicators = [
+            "show me", "display", "read me", "what does it say",
+            "full document", "full content", "what is written",
+            "show the file", "open the", "give me the document",
+            "tell me what's in", "what's in the", "entire document",
+            "whole document", "print the", "get the content of",
+            "show content", "show all", "load all", "read the file",
+            "give me everything in", "show full", "display full",
+        ]
+        for indicator in doc_indicators:
+            if indicator in query_lower:
+                return True
+
+        prompt = DOCUMENT_QUERY_DECISION_PROMPT.format(query=query)
+        try:
+            response = ollama.generate(
+                model=self.model,
+                prompt=prompt,
+                options={"num_predict": 5, "temperature": 0.0},
+            )
+            text = response.get("response", "").strip().upper()
+            return "DOCUMENT" in text
+        except Exception:
+            return False
+
+    def _identify_document(self, retrieved_docs: List[Dict[str, Any]]) -> Optional[str]:
+        filenames = [d["metadata"].get("filename") for d in retrieved_docs if d.get("metadata") and d["metadata"].get("filename")]
+        if not filenames:
+            return None
+        most_common = Counter(filenames).most_common(1)
+        return most_common[0][0] if most_common else None
 
     def decide_web_search(self, query: str) -> bool:
         query_lower = query.lower()
@@ -272,18 +316,7 @@ SQL Query:"""
         if any(w in query_lower for w in coding):
             return False
 
-        prompt = (
-            "Task: Decide if answering the user's query requires current real-time information, news, local weather, sports scores, or specific factual details that might be missing from your static knowledge.\n"
-            "Examples:\n"
-            '- "latest news about Apple" -> YES\n'
-            '- "price of BTC today" -> YES\n'
-            '- "who is the prime minister of India" -> YES\n'
-            '- "how to write a binary search in python" -> NO\n'
-            '- "what is the capital of France" -> NO\n'
-            '- "tell me a story" -> NO\n\n'
-            f'User Query: "{query}"\n\n'
-            "Require web search? (YES/NO):"
-        )
+        prompt = WEB_SEARCH_DECISION_PROMPT.format(query=query)
         try:
             response = ollama.generate(
                 model=self.model,

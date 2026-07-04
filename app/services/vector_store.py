@@ -95,6 +95,40 @@ class VectorStore:
             print(f"Error retrieving documents: {e}")
             return []
 
+    def get_all_filenames(self) -> List[str]:
+        try:
+            all_metadatas = self.collection.get()["metadatas"]
+            filenames = set()
+            for meta in all_metadatas:
+                if meta and "filename" in meta:
+                    filenames.add(meta["filename"])
+            return sorted(filenames)
+        except Exception as e:
+            print(f"Error getting filenames: {e}")
+            return []
+
+    def get_all_chunks_by_filename(self, filename: str) -> List[Dict[str, Any]]:
+        try:
+            results = self.collection.get(
+                where={"filename": filename},
+                include=["documents", "metadatas"],
+            )
+
+            docs = []
+            if results["documents"]:
+                for i, doc in enumerate(results["documents"]):
+                    docs.append({
+                        "content": doc,
+                        "metadata": results["metadatas"][i] if results["metadatas"] else {},
+                        "similarity": 1.0,
+                    })
+
+            docs.sort(key=lambda d: d["metadata"].get("chunk_index", 0))
+            return docs
+        except Exception as e:
+            print(f"Error getting chunks by filename: {e}")
+            return []
+
     def get_document_count(self) -> int:
         try:
             return self.collection.count()
