@@ -15,6 +15,7 @@ from mcp.client.session import ClientSession
 
 from app.core.config import config
 from app.models.database import db
+from app.prompts.filesystem import FILESYSTEM_SYSTEM_PROMPT_TEMPLATE
 
 logger = logging.getLogger(__name__)
 
@@ -153,19 +154,7 @@ async def stream_mcp_agent(
                 messages = [
                     {
                         "role": "system",
-                        "content": (
-                            f"You are an advanced filesystem agent with FULL read/write access to: {dirs_str}. "
-                            "YOU HAVE SPECIALIZED TOOLS to interact with files and folders. "
-                            "CRITICAL INSTRUCTIONS: "
-                            "1. ALWAYS use your provided tools to fulfill the user's request. "
-                            f"2. You MUST provide the FULL ABSOLUTE PATH starting with one of the allowed directories in all tool calls. "
-                            f"   Allowed directories: {dirs_str}. "
-                            "   Do NOT use relative paths like '.' or general paths. "
-                            "3. NEVER say 'I am an AI and cannot access files'. Execute the required tool immediately. "
-                            "4. To find files by extension, call list_directory ONCE on the target folder, "
-                            "   then filter the returned filenames yourself by extension in your final answer. "
-                            "   Do NOT call list_directory more than once for the same directory."
-                        ),
+                        "content": FILESYSTEM_SYSTEM_PROMPT_TEMPLATE.format(dirs_str=dirs_str),
                     }
                 ]
 
@@ -187,7 +176,7 @@ async def stream_mcp_agent(
 
                 async for event in agent.astream(
                     {"messages": messages},
-                    config={"recursion_limit": 6},
+                    config={"recursion_limit": 20},
                     stream_mode="updates",
                 ):
                     for node_name, update in event.items():
