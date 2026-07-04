@@ -140,6 +140,101 @@ def build_tools(modes: List[str], user_id: Optional[str] = None) -> list:
 
         tools.append(web_search)
 
+    if "filesystem" in modes:
+        import shutil
+        import glob as glob_mod
+
+        def _normalize_path(path: str, user_id: Optional[str] = None) -> str:
+            """Resolve a path and verify it's within an allowed directory."""
+            from app.services.mcp_agent import _get_allowed_dirs
+            allowed = _get_allowed_dirs(user_id)
+            abs_path = os.path.abspath(os.path.normpath(path))
+            for d in allowed:
+                allowed_abs = os.path.abspath(os.path.normpath(d))
+                if abs_path.startswith(allowed_abs + os.sep) or abs_path == allowed_abs:
+                    return abs_path
+            raise PermissionError(
+                f"Access denied: '{path}' is not within allowed directories: {', '.join(allowed)}"
+            )
+
+        @tool
+        def list_directory(path: str = ".") -> str:
+            """List files and directories in a folder. Path must be within allowed directories."""
+            try:
+                resolved = _normalize_path(path, user_id)
+                entries = os.listdir(resolved)
+                lines = []
+                for e in sorted(entries):
+                    full = os.path.join(resolved, e)
+                    suffix = "/" if os.path.isdir(full) else ""
+                    lines.append(f"{e}{suffix}")
+                return "\n".join(lines) if lines else "(empty directory)"
+            except Exception as e:
+                return f"Error listing directory: {e}"
+
+        @tool
+        def read_file(path: str) -> str:
+            """Read the contents of a text file. Path must be within allowed directories."""
+            try:
+                resolved = _normalize_path(path, user_id)
+                if not os.path.isfile(resolved):
+                    return f"File not found: {path}"
+                with open(resolved, "r", encoding="utf-8", errors="replace") as f:
+                    content = f.read()
+                return content
+            except Exception as e:
+                return f"Error reading file: {e}"
+
+        @tool
+        def write_file(path: str, content: str) -> str:
+            """Write content to a file (creates or overwrites). Path must be within allowed directories."""
+            try:
+                resolved = _normalize_path(path, user_id)
+                os.makedirs(os.path.dirname(resolved) or ".", exist_ok=True)
+                with open(resolved, "w", encoding="utf-8") as f:
+                    f.write(content)
+                return f"File written: {path} ({len(content)} bytes)"
+            except Exception as e:
+                return f"Error writing file: {e}"
+
+        @tool
+        def search_files(pattern: str, path: str = ".") -> str:
+            """Search for files by glob pattern (e.g. '*.txt', '**/*.py'). Path must be within allowed directories."""
+            try:
+                resolved = _normalize_path(path, user_id)
+                matches = glob_mod.glob(os.path.join(resolved, pattern), recursive=True)
+                if not matches:
+                    return f"No files matching '{pattern}' found in {path}"
+                lines = []
+                for m in sorted(matches):
+                    rel = os.path.relpath(m, resolved)
+                    lines.append(rel)
+                return "\n".join(lines)
+            except Exception as e:
+                return f"Error searching files: {e}"
+
+        @tool
+        def get_file_info(path: str) -> str:
+            """Get metadata about a file or directory (size, modified time, type). Path must be within allowed directories."""
+            try:
+                resolved = _normalize_path(path, user_id)
+                if not os.path.exists(resolved):
+                    return f"Path not found: {path}"
+                stat = os.stat(resolved)
+                kind = "directory" if os.path.isdir(resolved) else "file"
+                size = stat.st_size
+                from datetime import datetime
+                mtime = datetime.fromtimestamp(stat.st_mtime).isoformat()
+                return f"Path: {path}\nType: {kind}\nSize: {size} bytes\nModified: {mtime}\nAbsolute: {resolved}"
+            except Exception as e:
+                return f"Error getting file info: {e}"
+
+        tools.append(list_directory)
+        tools.append(read_file)
+        tools.append(write_file)
+        tools.append(search_files)
+        tools.append(get_file_info)
+
     if "documentation" in modes:
         from app.document_generation.storage.file_storage import file_storage
         from app.document_generation.registry import GeneratorRegistry
@@ -217,6 +312,8 @@ def build_system_prompt(modes: List[str]) -> str:
 - If the user asks about college policies or TCET-specific information, search TCET documents first.
 - If the user asks for current/real-time information, search the web first.
 - If the user asks about data in connected databases, use the SQL tools.
+- If the user asks to read, write, list, or search files, use the filesystem tools (list_directory, read_file, write_file, search_files, get_file_info).
+- All filesystem operations are restricted to the user's allowed directories.
 
 For each major step, briefly announce what you're doing before calling the tool."""
     return prompt.strip()
