@@ -20,6 +20,7 @@
     "secret_key": "your-secret-key-change-in-production",
     "default_web_search_provider": "tavily",
     "sql_max_iterations": 4,
+    "vision_model": "gemma4:31b-cloud",
     "sql_databases": {
         "default": {
             "type": "postgresql",

@@ -22,8 +22,11 @@ from app.services.auth import (
     register_user,
     decode_token,
 )
+import asyncio
+
 from app.services.llm import llm_service
 from app.services.vector_store import vector_store, user_vector_store
+from app.services.chat import chat_service
 
 
 def _retrieve_both_stores(query: str, **kwargs):
@@ -31,7 +34,69 @@ def _retrieve_both_stores(query: str, **kwargs):
     if not docs:
         docs = vector_store.retrieve_similar(query, **kwargs)
     return docs
-from app.services.chat import chat_service
+
+
+_NON_INFORMATIVE_PATTERNS = [
+    "hello", "hi", "hey", "good morning", "good afternoon", "good evening",
+    "how are you", "what's up", "bye", "goodbye", "thanks", "thank you",
+    "who are you", "what are you", "tell me about yourself",
+    "joke", "funny", "help", "what can you do", "capabilities",
+    "weather", "news", "date", "time",
+    "ok", "okay", "k", "sure", "yes", "no", "maybe", "alright",
+    "nice", "cool", "great", "awesome", "good", "fine",
+]
+
+
+def _should_process_memory(message: str) -> bool:
+    if len(message.strip()) < 15:
+        return False
+    query_lower = message.lower().strip().rstrip("?.!, ")
+    if query_lower in {"hello", "hi", "hey", "bye", "thanks", "ok", "okay", "k", "sure", "yes", "no", "good"}:
+        return False
+    for pattern in _NON_INFORMATIVE_PATTERNS:
+        if query_lower == pattern or query_lower.startswith(pattern + " "):
+            return False
+    return True
+
+
+# Strong refs to fire-and-forget tasks: prevents GC mid-run; drained in lifespan on shutdown
+_bg_tasks: set = set()
+
+
+def _extract_and_store_memories(
+    user_id: str, message: str, history: list, parser_data_blocks: list, session_id: str,
+):
+    """Sync worker (LLM extraction + embedding + Chroma write). Must run in a thread —
+    calling it on the event loop would stall all concurrent requests for 1-2s."""
+    try:
+        extract_input = message
+        if parser_data_blocks:
+            file_snippets = [b[:2000] for b in parser_data_blocks]
+            extract_input = message + "\n\n[Attached file content:]\n" + "\n\n".join(file_snippets)
+        extracted = llm_service.extract_memories(extract_input, history)
+        if extracted:
+            from app.services.memory_store import memory_store as mem_store
+            mem_store.add_memories_batch(
+                user_id=user_id,
+                facts=extracted,
+                source_message_id=session_id,
+            )
+    except Exception as e:
+        print(f"Background memory extraction error: {e}")
+
+
+async def _background_memory_extraction(
+    user_id: str, message: str, history: list, parser_data_blocks: list, session_id: str,
+):
+    await asyncio.to_thread(
+        _extract_and_store_memories, user_id, message, history, parser_data_blocks, session_id,
+    )
+
+
+def _schedule_memory_extraction(*args) -> None:
+    task = asyncio.ensure_future(_background_memory_extraction(*args))
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
 from app.graphs.chat_graph import chat_agent
 from app.models.database import db
 from app.core.config import config
@@ -267,6 +332,7 @@ async def chat_stream(
         parser_data_blocks = []
         large_files = []
         target_files = []
+        attached_image_paths = []
 
         if getattr(request, "attached_files", None):
             target_files = request.attached_files
@@ -297,6 +363,11 @@ async def chat_stream(
                         
                         page_count = meta_data.get("page_count", 0)
                         estimated_tokens = meta_data.get("estimated_tokens", 0)
+
+                        # Track image files for multimodal dispatch
+                        orig_path = meta_data.get("orig_path", "")
+                        if orig_path and os.path.exists(orig_path):
+                            attached_image_paths.append(orig_path)
                         
                         if page_count > 30 or estimated_tokens > 30000:
                             is_small = False
@@ -321,40 +392,31 @@ async def chat_stream(
             llm_query = query + "\n\n" + "\n\n".join(parser_data_blocks)
             query_to_save = llm_query
 
-        # ── Background memory extraction & retrieval ──
-        try:
-            extract_input = request.message
-            if parser_data_blocks:
-                file_snippets = [b[:2000] for b in parser_data_blocks]
-                extract_input = request.message + "\n\n[Attached file content:]\n" + "\n\n".join(file_snippets)
-            extracted = llm_service.extract_memories(extract_input, history)
-            from app.services.memory_store import memory_store as mem_store
-            for f in extracted:
-                mem_store.add_memory(
-                    user_id=current_user["user_id"],
-                    fact=f["fact"],
-                    category=f.get("category", "other"),
-                    confidence=f.get("confidence", 0.8),
-                    source_message_id=session_id,
+        # ── Memory retrieval (before response — fast path only if informative) ──
+        should_process = _should_process_memory(request.message)
+        if should_process:
+            try:
+                retrieve_query = request.message
+                if parser_data_blocks:
+                    short_snippet = "\n".join(b[:300] for b in parser_data_blocks)
+                    retrieve_query = request.message + " " + short_snippet[:1000]
+                from app.services.memory_store import memory_store as mem_store
+                # Offload blocking embed+query so a slow retrieval can't stall other requests
+                memories = await asyncio.to_thread(
+                    mem_store.retrieve_memories,
+                    current_user["user_id"], retrieve_query, 3,
                 )
-            retrieve_query = request.message
-            if parser_data_blocks:
-                short_snippet = "\n".join(b[:300] for b in parser_data_blocks)
-                retrieve_query = request.message + " " + short_snippet[:1000]
-            memories = mem_store.retrieve_memories(
-                user_id=current_user["user_id"], query=retrieve_query, top_k=3,
-            )
-            if memories:
-                lines = []
-                for m in memories:
-                    meta = m.get("metadata", {})
-                    cat = meta.get("category", "other")
-                    lines.append(f"- {m['fact']} ({cat})")
-                memory_context_str = "Information from your past conversations:\n" + "\n".join(lines)
-                llm_query = memory_context_str + "\n\n" + llm_query
-                query = llm_query
-        except Exception as e:
-            print(f"Memory processing error: {e}")
+                if memories:
+                    lines = []
+                    for m in memories:
+                        meta = m.get("metadata", {})
+                        cat = meta.get("category", "other")
+                        lines.append(f"- {m['fact']} ({cat})")
+                    memory_context_str = "Information from your past conversations:\n" + "\n".join(lines)
+                    llm_query = memory_context_str + "\n\n" + llm_query
+                    query = llm_query
+            except Exception as e:
+                print(f"Memory retrieval error: {e}")
 
         retrieved_docs = []
         web_images = []
@@ -771,22 +833,30 @@ async def chat_stream(
                 gen = stream_sql(sql_resp)
         elif query_type == "rag" or getattr(request, "attached_files", None):
             source = "rag"
-            filtered_docs = [d for d in retrieved_docs if d.get("similarity", 1) >= rag_threshold]
-            
-            if not filtered_docs and not parser_data_blocks:
-                if single_mode == "rag":
-                    # TCET ONLY is ON -> fall back to general LLM response with RAG_FALLBACK_PROMPT
-                    source = "general"
-                    gen = llm_service.generate_stream(llm_query, None, history, system_prompt=RAG_FALLBACK_PROMPT)
-                else:
-                    # TCET ONLY is OFF -> ask to reupload and index
-                    def stream_reupload():
-                        yield "I couldn't find any relevant information in your uploaded documents. Please make sure the correct files are uploaded and indexed."
-                    gen = stream_reupload()
-            else:
-                gen = llm_service.generate_rag_response_stream(
-                    llm_query, filtered_docs, history, similarity_threshold=rag_threshold
+
+            # ── Multimodal dispatch (vision model + attached images) ──
+            if attached_image_paths and config.vision_model:
+                source = "vision"
+                full_multimodal_response = llm_service.generate_multimodal_response(
+                    query, attached_image_paths, history,
                 )
+                def stream_vision():
+                    yield full_multimodal_response
+                gen = stream_vision()
+            else:
+                filtered_docs = [d for d in retrieved_docs if d.get("similarity", 1) >= rag_threshold]
+                if not filtered_docs and not parser_data_blocks:
+                    if single_mode == "rag":
+                        source = "general"
+                        gen = llm_service.generate_stream(llm_query, None, history, system_prompt=RAG_FALLBACK_PROMPT)
+                    else:
+                        def stream_reupload():
+                            yield "I couldn't find any relevant information in your uploaded documents. Please make sure the correct files are uploaded and indexed."
+                        gen = stream_reupload()
+                else:
+                    gen = llm_service.generate_rag_response_stream(
+                        llm_query, filtered_docs, history, similarity_threshold=rag_threshold
+                    )
         else:
             source = "general"
             if raw_mode == "rag" or (isinstance(raw_mode, list) and "rag" in raw_mode):
@@ -847,6 +917,13 @@ async def chat_stream(
                 print(f"Memory update error: {e}")
 
             yield f"data: {json.dumps({'done': True, 'source': source, 'response_time': round(response_time, 2), 'retrieved_docs': retrieved_for_response})}\n\n"
+
+            # ── Fire-and-forget memory extraction (after response) ──
+            if should_process:
+                _schedule_memory_extraction(
+                    current_user["user_id"], request.message, history,
+                    parser_data_blocks, session_id,
+                )
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 

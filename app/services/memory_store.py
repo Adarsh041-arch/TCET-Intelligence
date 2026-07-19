@@ -1,3 +1,4 @@
+import threading
 import uuid
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
@@ -10,6 +11,8 @@ from app.services.embeddings import embedding_service
 
 
 class MemoryStore:
+    _write_lock = threading.Lock()
+
     def __init__(
         self,
         persist_directory: str = "data/chroma_memory",
@@ -61,18 +64,49 @@ class MemoryStore:
             "confidence": confidence,
             "source_message_id": source_message_id,
             "created_at": now,
-            "last_accessed_at": now,
-            "access_count": 0,
         }
         embedding = embedding_service.embed_text(fact)
         collection = self._get_collection()
-        collection.add(
-            ids=[memory_id],
-            embeddings=[embedding],
-            metadatas=[metadata],
-            documents=[fact],
-        )
+        with self._write_lock:
+            collection.add(
+                ids=[memory_id],
+                embeddings=[embedding],
+                metadatas=[metadata],
+                documents=[fact],
+            )
         return memory_id
+
+    def add_memories_batch(
+        self,
+        user_id: str,
+        facts: List[Dict[str, Any]],
+        source_message_id: str = "",
+    ) -> List[str]:
+        if not facts:
+            return []
+        now = datetime.now(timezone.utc).isoformat()
+        texts = [f["fact"] for f in facts]
+        ids = [str(uuid.uuid4()) for _ in facts]
+        embeddings = embedding_service.embed_texts(texts)
+        metadatas = [
+            {
+                "user_id": user_id,
+                "category": f.get("category", "other"),
+                "confidence": f.get("confidence", 0.8),
+                "source_message_id": source_message_id,
+                "created_at": now,
+            }
+            for f in facts
+        ]
+        collection = self._get_collection()
+        with self._write_lock:
+            collection.add(
+                ids=ids,
+                embeddings=embeddings,
+                metadatas=metadatas,
+                documents=texts,
+            )
+        return ids
 
     def retrieve_memories(
         self,
@@ -104,9 +138,6 @@ class MemoryStore:
                     "metadata": meta,
                     "similarity": 1 - results["distances"][0][i] if results.get("distances") else 1.0,
                 })
-                meta["access_count"] = meta.get("access_count", 0) + 1
-                meta["last_accessed_at"] = datetime.now(timezone.utc).isoformat()
-                collection.update(ids=[mem_id], metadatas=[meta])
         return memories
 
     def update_memory(

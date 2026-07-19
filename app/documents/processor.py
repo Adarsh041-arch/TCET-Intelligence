@@ -1,4 +1,5 @@
 import hashlib
+import re
 import uuid
 import os
 import tempfile
@@ -98,13 +99,23 @@ class DocumentProcessor:
         try:
             with open(txt_path, "w", encoding="utf-8") as f:
                 f.write(text)
-            
+
+            # Save original binary for image files (multimodal chat)
+            is_image = file_ext in (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp")
+            orig_path = ""
+            if is_image:
+                orig_path = os.path.join(self.upload_dir, f"{doc_id}{file_ext}")
+                with open(orig_path, "wb") as f:
+                    f.write(file_content)
+
             import json
             with open(meta_path, "w", encoding="utf-8") as f:
                 json.dump({
                     "page_count": page_count,
                     "estimated_tokens": estimated_tokens,
-                    "filename": filename
+                    "filename": filename,
+                    "file_ext": file_ext,
+                    "orig_path": orig_path,
                 }, f)
         except Exception as e:
             print(f"Error writing sidecar files: {e}")
@@ -130,6 +141,12 @@ class DocumentProcessor:
             ".json": self._extract_json,
             ".html": self._extract_html,
             ".htm": self._extract_html,
+            ".png": self._extract_image,
+            ".jpg": self._extract_image,
+            ".jpeg": self._extract_image,
+            ".gif": self._extract_image,
+            ".bmp": self._extract_image,
+            ".webp": self._extract_image,
         }
 
         extractor = extractors.get(file_ext)
@@ -188,17 +205,36 @@ class DocumentProcessor:
         try:
             excel_file = pd.ExcelFile(tmp_path, engine="openpyxl")
             for sheet_name in excel_file.sheet_names:
-                text_parts.append(f"=== Sheet: {sheet_name} ===")
+                text_parts.append(f"<<<SHEET: {sheet_name}>>>")
                 df = pd.read_excel(excel_file, sheet_name=sheet_name, engine="openpyxl")
-                text_parts.append(
-                    "Columns: " + ", ".join([str(col) for col in df.columns])
-                )
-                for idx, row in df.iterrows():
-                    row_text = " | ".join(
-                        [f"{col}: {val}" for col, val in row.items() if pd.notna(val)]
-                    )
-                    if row_text.strip():
-                        text_parts.append(row_text)
+                if df.empty:
+                    text_parts.append("(empty sheet)")
+                    text_parts.append("")
+                    continue
+
+                # ── Pre-computed stats ──
+                stats = []
+                for col in df.columns:
+                    if pd.api.types.is_numeric_dtype(df[col]):
+                        vals = df[col].dropna()
+                        if not vals.empty:
+                            stats.append(
+                                f"{col}: count={len(vals)}, min={vals.min()}, "
+                                f"max={vals.max()}, avg={vals.mean():.2f}"
+                            )
+                if stats:
+                    text_parts.append("[Stats] " + " | ".join(stats))
+
+                # ── Markdown table ──
+                headers = [str(c) for c in df.columns]
+                text_parts.append("| " + " | ".join(headers) + " |")
+                text_parts.append("| " + " | ".join(["---"] * len(headers)) + " |")
+                for _, row in df.iterrows():
+                    cells = []
+                    for c in df.columns:
+                        v = row[c]
+                        cells.append(str(v) if pd.notna(v) else "")
+                    text_parts.append("| " + " | ".join(cells) + " |")
                 text_parts.append("")
         except Exception as e:
             print(f"Excel extraction error: {e}")
@@ -257,15 +293,60 @@ class DocumentProcessor:
         except:
             return file_content.decode("utf-8", errors="ignore")
 
+    def _extract_image(self, file_content: bytes) -> str:
+        try:
+            import pytesseract
+            from PIL import Image
+            import io
+
+            image = Image.open(io.BytesIO(file_content))
+            text = pytesseract.image_to_string(image)
+            return text.strip() if text.strip() else "[No text detected in image]"
+        except ImportError:
+            return "[Image uploaded. OCR library (pytesseract) not installed. Install with: pip install pytesseract]"
+        except Exception as e:
+            print(f"Image OCR error: {e}")
+            return "[Could not extract text from image]"
+
     def _chunk_text(self, text: str) -> List[str]:
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=self.chunk_size,
-            chunk_overlap=self.chunk_overlap,
-            length_function=len,
-            separators=["\n\n", "\n", ". ", " ", ""],
-        )
-        chunks = text_splitter.split_text(text)
-        return [chunk.strip() for chunk in chunks if chunk.strip()]
+        # Table-aware chunking: keep <<<SHEET: ...>>> blocks atomic.
+        # Split by sheet markers first, then by row boundaries if still too large.
+        sheet_pattern = r"(<<<SHEET: [^>]+>>>)"
+        parts = re.split(sheet_pattern, text)
+        sheet_blocks: List[str] = []
+        i = 0
+        while i < len(parts):
+            if parts[i].startswith("<<<SHEET:"):
+                block = parts[i] + (parts[i + 1] if i + 1 < len(parts) else "")
+                sheet_blocks.append(block.strip())
+                i += 2
+            else:
+                leftover = parts[i].strip()
+                if leftover:
+                    sheet_blocks.append(leftover)
+                i += 1
+
+        chunks: List[str] = []
+        for block in sheet_blocks:
+            if len(block) <= self.chunk_size:
+                chunks.append(block)
+            else:
+                # Split large block at markdown table row boundaries
+                lines = block.split("\n")
+                current = []
+                current_len = 0
+                for line in lines:
+                    line_len = len(line) + 1
+                    if current_len + line_len > self.chunk_size and current:
+                        chunks.append("\n".join(current))
+                        current = []
+                        current_len = 0
+                    current.append(line)
+                    current_len += line_len
+                if current:
+                    chunks.append("\n".join(current))
+
+        return [c.strip() for c in chunks if c.strip()]
 
     def delete_document(self, doc_id: str) -> bool:
         user_vector_store.delete_document(doc_id)

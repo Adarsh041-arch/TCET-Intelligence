@@ -27,6 +27,7 @@ class Config(BaseModel):
     secret_key: str
     default_web_search_provider: str = "tavily"
     sql_max_iterations: int = 4
+    vision_model: Optional[str] = None
 
 
 def load_config(config_path: str = "config.json") -> Config:

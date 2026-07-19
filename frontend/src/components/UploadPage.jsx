@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import { Upload, FileText, CheckCircle, AlertCircle } from 'lucide-react';
 import { uploadDocument } from '../services/api';
 
-const ALLOWED = ['PDF', 'TXT', 'DOCX', 'XLSX', 'XLS', 'CSV', 'JSON', 'HTML'];
+const ALLOWED = ['PDF', 'TXT', 'DOCX', 'XLSX', 'XLS', 'CSV', 'JSON', 'HTML', 'PNG', 'JPG', 'JPEG', 'GIF', 'BMP', 'WEBP'];
 
 export default function UploadPage() {
   const [file, setFile] = useState(null);
@@ -68,13 +68,13 @@ export default function UploadPage() {
           {file ? '' : 'Drop a file here or click to browse'}
         </div>
         <div className="upload-zone-hint">
-          Max 10MB · Supported: PDF, TXT, DOCX, XLSX, CSV, JSON, HTML
+          Max 20MB · Supported: PDF, TXT, DOCX, XLSX, CSV, JSON, HTML, PNG, JPG, GIF
         </div>
         <input
           ref={inputRef}
           type="file"
           style={{ display: 'none' }}
-          accept=".pdf,.txt,.docx,.xlsx,.xls,.csv,.json,.html"
+          accept=".pdf,.txt,.docx,.xlsx,.xls,.csv,.json,.html,.png,.jpg,.jpeg,.gif,.bmp,.webp"
           onChange={(e) => { if (e.target.files[0]) setFile(e.target.files[0]); }}
         />
       </div>

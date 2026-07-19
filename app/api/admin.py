@@ -47,8 +47,14 @@ ALLOWED_EXTENSIONS = {
     ".csv",
     ".json",
     ".html",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".bmp",
+    ".webp",
 }
-MAX_FILE_SIZE = 10 * 1024 * 1024
+MAX_FILE_SIZE = 20 * 1024 * 1024
 
 
 @router.post("/documents/upload", response_model=DocumentUploadResponse)

@@ -13,7 +13,8 @@ class EmbeddingService:
         return response["embedding"]
 
     def embed_texts(self, texts: List[str]) -> List[List[float]]:
-        return [self.embed_text(t) for t in texts]
+        response = self.client.embed(model=self.model_name, input=texts)
+        return response["embeddings"]
 
     def get_embedding_dimension(self) -> int:
         return len(self.embed_text("sample"))

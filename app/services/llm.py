@@ -74,6 +74,38 @@ class LLMService:
             print(f"Warmup error: {e}")
             return False
 
+    def generate_multimodal_response(
+        self,
+        query: str,
+        image_paths: List[str],
+        chat_history: Optional[List[Dict[str, str]]] = None,
+    ) -> str:
+        try:
+            model = config.vision_model or self.model
+            messages = [{"role": "system", "content": "You are a helpful assistant that can understand images and answer questions about them."}]
+            if chat_history:
+                for msg in chat_history[-MAX_HISTORY:]:
+                    messages.append({"role": msg["role"], "content": msg["content"]})
+
+            user_content: List[Dict[str, Any]] = [{"type": "text", "text": query}]
+            for path in image_paths:
+                if os.path.exists(path):
+                    import base64
+                    with open(path, "rb") as f:
+                        b64 = base64.b64encode(f.read()).decode("utf-8")
+                    ext = os.path.splitext(path)[1].lstrip(".")
+                    user_content.append({
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/{ext};base64,{b64}"},
+                    })
+
+            messages.append({"role": "user", "content": user_content})
+            response = self.client.chat(model=model, messages=messages)
+            return response["message"]["content"].strip()
+        except Exception as e:
+            print(f"Multimodal response error: {e}")
+            return f"I encountered an error processing the image: {e}"
+
     def _build_messages(
         self,
         prompt: str,
@@ -566,7 +598,7 @@ class LLMService:
             response = self.client.generate(
                 model=self.model,
                 prompt=prompt,
-                options={"num_predict": 1024, "temperature": 0.0},
+                options={"num_predict": 512, "temperature": 0.0},
             )
             text = response.get("response", "").strip()
             text = re.sub(r"^```(?:json)?\s*", "", text)

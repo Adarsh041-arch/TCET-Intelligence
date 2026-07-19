@@ -1,8 +1,9 @@
+import asyncio
 import json
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.routes import router as api_router
+from app.api.routes import router as api_router, _bg_tasks
 from app.api.admin import router as admin_router
 from app.api.sql_routes import router as sql_router
 from app.core.config import config
@@ -59,6 +60,14 @@ async def lifespan(app: FastAPI):
         print(f"Warning: Could not auto-connect to default database: {e}")
 
     yield
+
+    # ── Drain background memory extraction tasks ──
+    pending = [t for t in _bg_tasks if not t.done()]
+    if pending:
+        print(f"Draining {len(pending)} background memory task(s)...")
+        done, _ = await asyncio.wait(pending, timeout=5.0)
+        if len(done) < len(pending):
+            print(f"Warning: {len(pending) - len(done)} background task(s) did not complete within timeout")
     print("Shutting down...")
 
 

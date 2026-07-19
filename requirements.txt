@@ -26,3 +26,4 @@ playwright
 fpdf2
 Pillow
 psycopg2-binary
+pytesseract
