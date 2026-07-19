@@ -26,7 +26,6 @@ export default function ExportModal({ open, onClose, markdownContent }) {
   const [templates, setTemplates] = useState([]);
   const [selectedFormat, setSelectedFormat] = useState('docx');
   const [selectedTemplate, setSelectedTemplate] = useState('default');
-  const [useV2, setUseV2] = useState(true);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
@@ -44,7 +43,6 @@ export default function ExportModal({ open, onClose, markdownContent }) {
     getTemplates().then((data) => setTemplates(data || [])).catch(() => {});
     setSelectedFormat('docx');
     setSelectedTemplate('default');
-    setUseV2(true);
   }, [open]);
 
   if (!open) return null;
@@ -58,7 +56,7 @@ export default function ExportModal({ open, onClose, markdownContent }) {
         markdown: markdownContent,
         format: selectedFormat,
         template_id: selectedTemplate,
-        generator_version: useV2 && V2_CAPABLE.includes(selectedFormat) ? 'v2' : 'v1',
+        generator_version: V2_CAPABLE.includes(selectedFormat) ? 'v2' : 'v1',
       });
       setResult(res);
     } catch (err) {
@@ -76,7 +74,7 @@ export default function ExportModal({ open, onClose, markdownContent }) {
         markdown: markdownContent,
         format: selectedFormat,
         template_id: selectedTemplate,
-        generator_version: useV2 && V2_CAPABLE.includes(selectedFormat) ? 'v2' : 'v1',
+        generator_version: V2_CAPABLE.includes(selectedFormat) ? 'v2' : 'v1',
       });
       setResult(res);
       if (res.download_url) {
@@ -147,21 +145,7 @@ export default function ExportModal({ open, onClose, markdownContent }) {
               </div>
             </div>
 
-            {V2_CAPABLE.includes(selectedFormat) && (
-              <div className="export-section">
-                <label className="export-label">
-                  <label className="v2-toggle" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={useV2}
-                      onChange={(e) => setUseV2(e.target.checked)}
-                    />
-                    <Zap size={14} color="#8fbc8f" />
-                    <span>Use v2 generator (AST-based)</span>
-                  </label>
-                </label>
-              </div>
-            )}
+            {/* V2 generators are now the default and only option for docx, pptx, xlsx */}
 
             <div className="export-section">
               <label className="export-label">Template</label>

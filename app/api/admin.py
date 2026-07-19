@@ -10,7 +10,7 @@ from app.schemas import DocumentUploadResponse, DocumentInfo
 from app.services.auth import decode_token
 from app.api.routes import get_current_user
 from app.documents.processor import document_processor
-from app.services.vector_store import vector_store
+from app.services.vector_store import vector_store, user_vector_store, compute_file_hash
 from app.models.database import db
 from app.core.config import config
 
@@ -81,7 +81,8 @@ async def upload_document(
         )
 
     result = document_processor.process_file(
-        file_content=content, filename=file.filename, user_id=current_user["user_id"]
+        file_content=content, filename=file.filename, user_id=current_user["user_id"],
+        target_store=user_vector_store,
     )
 
     if not result["success"]:
@@ -100,8 +101,13 @@ async def upload_document(
 
 @router.get("/documents")
 async def list_documents(current_user: dict = Depends(get_current_user)):
-    documents = db.get_all_documents()
-    count = vector_store.get_document_count()
+    all_docs = db.get_all_documents()
+    if current_user["role"] == "admin":
+        documents = all_docs
+    else:
+        documents = [d for d in all_docs if d["uploaded_by"] == current_user["user_id"]]
+
+    count = user_vector_store.get_document_count() + vector_store.get_document_count()
     return {
         "documents": [
             DocumentInfo(
@@ -129,7 +135,7 @@ async def delete_document(doc_id: str, current_user: dict = Depends(get_admin_us
 
 @router.delete("/documents")
 async def clear_all_documents(current_user: dict = Depends(get_admin_user)):
-    success = vector_store.clear_all()
+    success = user_vector_store.clear_all()
     if success:
         return {"message": "All documents cleared successfully"}
     raise HTTPException(
@@ -209,12 +215,14 @@ async def index_tcet_docs(
                 results.append({"file_name": file_name, "success": False, "message": "Empty file"})
                 continue
 
-            file_hash = vector_store.compute_file_hash(content)
+            file_hash = compute_file_hash(content)
             db.upsert_tcet_doc(file_name, str(fpath), file_hash, len(content))
 
             result = document_processor.process_file(
                 file_content=content, filename=file_name, user_id=current_user["user_id"],
                 extra_metadata={"source": "tcet_managed"},
+                target_store=vector_store,
+                force=True,
             )
 
             if result["success"]:

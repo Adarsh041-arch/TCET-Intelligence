@@ -13,12 +13,9 @@ from app.document_generation.sandbox.sandbox_executor import sandbox_executor
 from app.document_generation.storage.file_storage import file_storage
 from app.document_generation.templates.template_manager import template_manager
 from app.document_generation.templates.template_manager import template_manager as tm
-from app.document_generation.generators.docx_generator import DOCXGenerator, docx_generate
 from app.document_generation.generators.docx_generator_v2 import DOCXGeneratorV2, docx_generate_v2
 from app.document_generation.generators.pdf_generator import PDFGenerator, pdf_generate
-from app.document_generation.generators.pptx_generator import PPTXGenerator, pptx_generate
 from app.document_generation.generators.pptx_generator_v2 import PPTXGeneratorV2, pptx_generate_v2
-from app.document_generation.generators.xlsx_generator import XLSXGenerator, xlsx_generate
 from app.document_generation.generators.xlsx_generator_v2 import XLSXGeneratorV2, xlsx_generate_v2
 
 router = APIRouter(prefix="/api/document-gen", tags=["Document Generation"])
@@ -69,12 +66,12 @@ GENERATOR_MODULES = {
 
 
 def _register_generators():
-    GeneratorRegistry.register("docx", DOCXGenerator)
+    GeneratorRegistry.register("docx", DOCXGeneratorV2)
     GeneratorRegistry.register("docx-v2", DOCXGeneratorV2)
     GeneratorRegistry.register("pdf", PDFGenerator)
-    GeneratorRegistry.register("pptx", PPTXGenerator)
+    GeneratorRegistry.register("pptx", PPTXGeneratorV2)
     GeneratorRegistry.register("pptx-v2", PPTXGeneratorV2)
-    GeneratorRegistry.register("xlsx", XLSXGenerator)
+    GeneratorRegistry.register("xlsx", XLSXGeneratorV2)
     GeneratorRegistry.register("xlsx-v2", XLSXGeneratorV2)
 
 _register_generators()
@@ -92,9 +89,9 @@ async def generate_document(request: GenerateRequest):
         )
 
     fmt = request.format.lower()
-    gen_version = request.generator_version or "v1"
     v2_formats = {"docx", "pptx", "xlsx"}
-    is_v2 = gen_version == "v2" and fmt in v2_formats
+    # docx, pptx, xlsx are always v2 now (AST-based direct library calls pipeline)
+    is_v2 = fmt in v2_formats
     effective_fmt = f"{fmt}-v2" if is_v2 else fmt
 
     job_id = str(uuid.uuid4())

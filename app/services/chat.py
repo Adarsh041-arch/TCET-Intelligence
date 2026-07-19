@@ -1,8 +1,16 @@
 import uuid
 from typing import List, Dict, Any, Optional
 from app.models.database import db
-from app.services.vector_store import vector_store
+from app.services.vector_store import vector_store, user_vector_store
 from app.services.llm import llm_service
+
+
+def _retrieve_both_stores(query: str, **kwargs):
+    """Search user store first, then fall back to legacy store for old docs."""
+    docs = user_vector_store.retrieve_similar(query, **kwargs)
+    if not docs:
+        docs = vector_store.retrieve_similar(query, **kwargs)
+    return docs
 
 
 class ChatService:
@@ -34,7 +42,7 @@ class ChatService:
             for msg in chat_history[-self.max_history:]
         ]
 
-        retrieved_docs = vector_store.retrieve_similar(message)
+        retrieved_docs = _retrieve_both_stores(message)
 
         if retrieved_docs:
             response = llm_service.generate_rag_response(
@@ -78,7 +86,7 @@ class ChatService:
             for msg in chat_history[-self.max_history:]
         ]
 
-        retrieved_docs = vector_store.retrieve_similar(message)
+        retrieved_docs = _retrieve_both_stores(message)
         full_response = ""
 
         if retrieved_docs:

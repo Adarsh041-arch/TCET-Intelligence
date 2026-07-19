@@ -12,7 +12,9 @@ from app.document_generation.storage.file_storage import file_storage
 from app.document_generation.templates.template_manager import template_manager
 from app.document_generation.registry import GeneratorRegistry
 from app.document_generation.markdown_ast import parse as ast_parse
+from app.document_generation.converters.markdown_converter import markdown_to_html
 from app.prompts.documentation import DOCUMENTATION_SYSTEM_PROMPT
+from app.prompts.general import SECURITY_INSTRUCTION
 from app.services.doc_feature_extractor import extract_features
 
 
@@ -62,7 +64,8 @@ async def stream_documentation_agent(
         "1. A brief description of what you're creating\n"
         "2. The generated markdown content (in a code block)\n"
         "3. The format suggestion\n"
-        "ALWAYS generate a complete document — don't just describe what you would do."
+        "ALWAYS generate a complete document — don't just describe what you would do.\n\n"
+        "## Confidentiality\n" + SECURITY_INSTRUCTION
     )
 
     messages = [{"role": "system", "content": system_prompt}]
@@ -79,17 +82,14 @@ async def stream_documentation_agent(
         response = llm_service.chat(messages)
         markdown_content = response.strip()
 
-        # Strip code fences if present
-        if markdown_content.startswith("```"):
-            lines = markdown_content.split("\n")
-            if lines[0].startswith("```"):
-                lines = lines[1:]
-            if lines and lines[-1].strip() == "```":
-                lines = lines[:-1]
-            markdown_content = "\n".join(lines).strip()
+        import re
+
+        # Extract clean markdown from the LLM response.
+        # The LLM often wraps the actual document in a code block and adds
+        # conversational text + a JSON action block around it.
+        markdown_content = _extract_markdown_from_response(markdown_content)
 
         # Strip raw HTML tags — markdown-it-py treats them as text
-        import re
         markdown_content = re.sub(r"<[^>]+>", "", markdown_content)
         # Collapse multiple blank lines
         markdown_content = re.sub(r"\n{3,}", "\n\n", markdown_content)
@@ -105,7 +105,14 @@ async def stream_documentation_agent(
         effective_fmt = f"{fmt}-v2" if is_v2 else fmt
         template = template_manager.get_template("default")
         gen = GeneratorRegistry.get(effective_fmt)
-        file_bytes = gen.generate(markdown_content, template, {})
+
+        # V2 generators (docx, pptx, xlsx) parse markdown internally via
+        # markdown_ast. The PDF generator (v1) expects HTML, so convert first.
+        if is_v2:
+            file_bytes = gen.generate(markdown_content, template, {})
+        else:
+            html_content = markdown_to_html(markdown_content)
+            file_bytes = gen.generate(html_content, template, {})
 
         filename = f"document_{job_id[:8]}.{fmt}"
         filepath = file_storage.store_file(file_bytes, filename, job_id)
@@ -155,3 +162,65 @@ def _is_document_regeneration_query(query: str) -> bool:
     keywords = ["change", "modify", "update", "regenerate", "edit", "different", "instead",
                 "style", "format", "color", "font", "layout", "add", "remove", "fix"]
     return any(k in q for k in keywords)
+
+
+def _extract_markdown_from_response(response: str) -> str:
+    """Extract clean markdown content from an LLM response.
+
+    The LLM often returns something like:
+        I will create a ... letter.
+        ```markdown
+        # Personal Letter
+        **Date:** ...
+        ```
+        **Suggested Format:** PDF
+        { "action": "generate_document", "markdown": "...", "format": "pdf" }
+
+    This function extracts just the markdown document content,
+    stripping conversational text and JSON action blocks.
+    """
+    import re
+
+    # 1. Try to find the largest fenced markdown code block
+    #    Match ```markdown ... ``` or ```md ... ``` or just ``` ... ```
+    fence_pattern = re.compile(
+        r"```(?:markdown|md)?\s*\n(.*?)```",
+        re.DOTALL,
+    )
+    fenced_blocks = fence_pattern.findall(response)
+
+    if fenced_blocks:
+        # Use the largest code block (likely the actual document content)
+        markdown_content = max(fenced_blocks, key=len).strip()
+        return markdown_content
+
+    # 2. No fenced block found — try to strip JSON action blocks
+    #    These look like { "action": "generate_document", ... }
+    json_pattern = re.compile(
+        r'\{\s*"action"\s*:\s*"generate_document".*?\}',
+        re.DOTALL,
+    )
+    cleaned = json_pattern.sub("", response).strip()
+
+    # 3. Strip common conversational preamble lines
+    #    e.g. "I will create a ...", "Here is your ...", "Suggested Format: ..."
+    lines = cleaned.split("\n")
+    doc_start = 0
+    doc_end = len(lines)
+
+    # Find where the actual document content starts (first markdown heading or content line)
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("#") or stripped.startswith("**Date:") or stripped.startswith("**Dear"):
+            doc_start = idx
+            break
+
+    # Trim trailing non-document lines (format suggestions, etc.)
+    for idx in range(len(lines) - 1, doc_start, -1):
+        stripped = lines[idx].strip()
+        if stripped and not stripped.lower().startswith("**suggested format") and not stripped.startswith("{"):
+            doc_end = idx + 1
+            break
+
+    result = "\n".join(lines[doc_start:doc_end]).strip()
+    return result if result else cleaned

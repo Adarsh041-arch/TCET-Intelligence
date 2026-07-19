@@ -6,9 +6,10 @@
     "embedding_model": "nomic-embed-text:latest",
     "small_document_threshold": 10,
     "chroma_persist_directory": "data/chroma",
+    "user_chroma_persist_directory": "data/chroma_user",
     "upload_directory": "data/uploads",
     "mcp_allowed_directory":"C:/Users/adars/OneDrive/Desktop",
-    "database_url": "data/chatbot.db",
+    "database_url": "postgresql://admin:admin123@localhost:5433/chatbot",
     "tcet_docs_directory": "data/tcet_docs",
     "chunk_size": 1000,
     "chunk_overlap": 200,
@@ -18,13 +19,15 @@
     "admin_password": "admin123",
     "secret_key": "your-secret-key-change-in-production",
     "default_web_search_provider": "tavily",
-    "sql_database": {
-        "type": "sqlite",
-        "path": "data/institution.db",
-        "host": "localhost",
-        "port": 3306,
-        "user": "root",
-        "password": "",
-        "database": "school_db"
+    "sql_max_iterations": 4,
+    "sql_databases": {
+        "default": {
+            "type": "postgresql",
+            "host": "localhost",
+            "port": 5433,
+            "user": "admin",
+            "password": "admin123",
+            "database": "tcet_tnp_db"
+        }
     }
 }

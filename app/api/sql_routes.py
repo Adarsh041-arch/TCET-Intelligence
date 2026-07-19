@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 from app.services.auth import decode_token
 from app.services.sql_connector import db_connector
+from app.models.database import db
 
 
 router = APIRouter()
@@ -89,8 +90,12 @@ async def sql_disconnect(current_user: dict = Depends(get_admin_user)):
 async def sql_tables(current_user: dict = Depends(get_admin_user)):
     if not db_connector.current_connection:
         return {"success": False, "tables": []}
-    tables = db_connector.get_tables()
-    return {"success": True, "tables": tables}
+    import traceback
+    try:
+        tables = db_connector.get_tables()
+        return {"success": True, "tables": tables}
+    except Exception as e:
+        return {"success": False, "tables": [], "error": str(e), "traceback": traceback.format_exc()}
 
 
 @router.get("/sql/schema/{table_name}")
@@ -107,3 +112,48 @@ async def sql_query(query: str, current_user: dict = Depends(get_admin_user)):
         return {"success": False, "error": "Not connected to any database"}
     result = db_connector.execute_query(query)
     return result
+
+
+# ── Exposed Database Management (Admin) ─────────────────────
+
+class ExposeDBRequest(BaseModel):
+    db_type: str
+    host: Optional[str] = "localhost"
+    port: Optional[int] = 5432
+    user: Optional[str] = "postgres"
+    password: Optional[str] = ""
+    database_name: Optional[str] = ""
+    path: Optional[str] = ""
+    label: str
+
+
+@router.post("/sql/expose")
+async def expose_database(
+    request: ExposeDBRequest,
+    current_user: dict = Depends(get_admin_user),
+):
+    data = request.model_dump()
+    data["db_user"] = data.pop("user", "")
+    db_id = db.expose_database(data, current_user["user_id"])
+    if db_id:
+        return {"success": True, "id": db_id, "message": f"Database '{request.label}' exposed to users"}
+    return {"success": False, "error": "Failed to expose database"}
+
+
+@router.get("/sql/exposed")
+async def list_exposed_databases(current_user: dict = Depends(get_admin_user)):
+    databases = db.get_exposed_databases()
+    return {"success": True, "databases": databases}
+
+
+@router.delete("/sql/exposed/{db_id}")
+async def delete_exposed_database(
+    db_id: int,
+    current_user: dict = Depends(get_admin_user),
+):
+    if db.delete_exposed_database(db_id):
+        return {"success": True, "message": "Exposed database removed"}
+    return {"success": False, "error": "Not found"}
+
+
+

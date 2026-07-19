@@ -1,24 +1,134 @@
 import os
 import sqlite3
+import uuid
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from pathlib import Path
 from app.core.config import config
 
+try:
+    import psycopg2
+    DB_INTEGRITY_ERRORS = (sqlite3.IntegrityError, psycopg2.IntegrityError)
+except ImportError:
+    DB_INTEGRITY_ERRORS = (sqlite3.IntegrityError,)
+
+
+class SafeConnection:
+    def __init__(self, conn, is_postgres=False):
+        self.conn = conn
+        self.is_postgres = is_postgres
+
+    def cursor(self):
+        return SafeCursor(self.conn.cursor(), self, self.is_postgres)
+
+    def commit(self):
+        self.conn.commit()
+
+    def rollback(self):
+        self.conn.rollback()
+
+    def close(self):
+        self.conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is not None:
+            try:
+                self.conn.rollback()
+            except Exception:
+                pass
+        else:
+            try:
+                self.conn.commit()
+            except Exception:
+                pass
+        try:
+            self.conn.close()
+        except Exception:
+            pass
+
+    def __del__(self):
+        try:
+            self.conn.commit()
+        except Exception:
+            pass
+        try:
+            self.conn.close()
+        except Exception:
+            pass
+
+
+class SafeCursor:
+    def __init__(self, cursor, conn_wrapper, is_postgres=False):
+        self.cursor = cursor
+        self.conn_wrapper = conn_wrapper
+        self.is_postgres = is_postgres
+
+    def execute(self, sql, params=None):
+        if self.is_postgres:
+            sql = sql.replace("?", "%s")
+            if "INSERT OR REPLACE INTO user_api_keys" in sql:
+                sql = "INSERT INTO user_api_keys (user_id, provider, api_key) VALUES (%s, %s, %s) ON CONFLICT (user_id, provider) DO UPDATE SET api_key = EXCLUDED.api_key"
+            elif "INSERT OR IGNORE INTO user_allowed_directories" in sql:
+                sql = "INSERT INTO user_allowed_directories (user_id, directory_path) VALUES (%s, %s) ON CONFLICT (user_id, directory_path) DO NOTHING"
+            
+            sql = sql.replace("INSERT OR IGNORE", "INSERT")
+            sql = sql.replace("INSERT OR REPLACE", "INSERT")
+        
+        if params is not None:
+            self.cursor.execute(sql, params)
+        else:
+            self.cursor.execute(sql)
+        return self
+
+    def fetchone(self):
+        return self.cursor.fetchone()
+
+    def fetchall(self):
+        return self.cursor.fetchall()
+
+    @property
+    def lastrowid(self):
+        try:
+            return self.cursor.lastrowid
+        except Exception:
+            return 0
+    
+    @property
+    def rowcount(self):
+        return self.cursor.rowcount
+
 
 class Database:
     def __init__(self, db_path: Optional[str] = None):
-        self.db_path = db_path or config.database_url
-        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
+        self.db_url = db_path or config.database_url
+        self.is_postgres = self.db_url.startswith("postgresql://") or self.db_url.startswith("postgres://")
+        if not self.is_postgres:
+            Path(self.db_url).parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
     def _get_connection(self):
-        return sqlite3.connect(self.db_path)
+        if self.is_postgres:
+            import psycopg2
+            conn = psycopg2.connect(self.db_url)
+            return SafeConnection(conn, is_postgres=True)
+        else:
+            conn = sqlite3.connect(self.db_url)
+            return SafeConnection(conn, is_postgres=False)
 
     def _init_db(self):
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
+            
+            def run_create(sql):
+                if self.is_postgres:
+                    sql = sql.replace("AUTOINCREMENT", "")
+                    sql = sql.replace("INTEGER PRIMARY KEY", "SERIAL PRIMARY KEY")
+                cursor.execute(sql)
+
+            run_create("""
                 CREATE TABLE IF NOT EXISTS users (
                     user_id TEXT PRIMARY KEY,
                     username TEXT UNIQUE NOT NULL,
@@ -27,7 +137,7 @@ class Database:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
-            cursor.execute("""
+            run_create("""
                 CREATE TABLE IF NOT EXISTS sessions (
                     session_id TEXT PRIMARY KEY,
                     user_id TEXT NOT NULL,
@@ -37,7 +147,7 @@ class Database:
                     FOREIGN KEY (user_id) REFERENCES users(user_id)
                 )
             """)
-            cursor.execute("""
+            run_create("""
                 CREATE TABLE IF NOT EXISTS messages (
                     message_id INTEGER PRIMARY KEY AUTOINCREMENT,
                     session_id TEXT NOT NULL,
@@ -47,7 +157,7 @@ class Database:
                     FOREIGN KEY (session_id) REFERENCES sessions(session_id)
                 )
             """)
-            cursor.execute("""
+            run_create("""
                 CREATE TABLE IF NOT EXISTS user_api_keys (
                     user_id TEXT NOT NULL,
                     provider TEXT NOT NULL DEFAULT 'tavily',
@@ -57,7 +167,7 @@ class Database:
                     FOREIGN KEY (user_id) REFERENCES users(user_id)
                 )
             """)
-            cursor.execute("""
+            run_create("""
                 CREATE TABLE IF NOT EXISTS user_allowed_directories (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id TEXT NOT NULL,
@@ -67,7 +177,7 @@ class Database:
                     UNIQUE(user_id, directory_path)
                 )
             """)
-            cursor.execute("""
+            run_create("""
                 CREATE TABLE IF NOT EXISTS documents (
                     doc_id TEXT PRIMARY KEY,
                     filename TEXT NOT NULL,
@@ -78,7 +188,7 @@ class Database:
                     FOREIGN KEY (uploaded_by) REFERENCES users(user_id)
                 )
             """)
-            cursor.execute("""
+            run_create("""
                 CREATE TABLE IF NOT EXISTS tcet_doc_index (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     file_name TEXT NOT NULL,
@@ -92,27 +202,44 @@ class Database:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            run_create("""
+                CREATE TABLE IF NOT EXISTS exposed_databases (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    db_type TEXT NOT NULL,
+                    host TEXT,
+                    port INTEGER,
+                    db_user TEXT,
+                    password TEXT,
+                    database_name TEXT,
+                    path TEXT,
+                    label TEXT NOT NULL,
+                    exposed_by TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (exposed_by) REFERENCES users(user_id)
+                )
+            """)
             conn.commit()
             self._create_default_admin()
 
     def _create_default_admin(self):
         from app.core.utils import get_password_hash
 
-        cursor = self._get_connection().cursor()
-        cursor.execute(
-            "SELECT * FROM users WHERE username = ?", (config.admin_username,)
-        )
-        if not cursor.fetchone():
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
             cursor.execute(
-                "INSERT INTO users (user_id, username, password_hash, role) VALUES (?, ?, ?, ?)",
-                (
-                    "admin-001",
-                    config.admin_username,
-                    get_password_hash(config.admin_password),
-                    "admin",
-                ),
+                "SELECT * FROM users WHERE username = ?", (config.admin_username,)
             )
-            self._get_connection().commit()
+            if not cursor.fetchone():
+                cursor.execute(
+                    "INSERT INTO users (user_id, username, password_hash, role) VALUES (?, ?, ?, ?)",
+                    (
+                        "admin-001",
+                        config.admin_username,
+                        get_password_hash(config.admin_password),
+                        "admin",
+                    ),
+                )
+                conn.commit()
 
     def create_user(
         self, user_id: str, username: str, password: str, role: str
@@ -128,7 +255,7 @@ class Database:
                 )
                 conn.commit()
             return True
-        except sqlite3.IntegrityError:
+        except DB_INTEGRITY_ERRORS:
             return False
 
     def get_user(self, username: str) -> Optional[Dict[str, Any]]:
@@ -162,7 +289,7 @@ class Database:
                 )
                 conn.commit()
             return True
-        except sqlite3.IntegrityError:
+        except DB_INTEGRITY_ERRORS:
             return False
 
     def get_user_sessions(self, user_id: str) -> List[Dict[str, Any]]:
@@ -260,12 +387,30 @@ class Database:
                 )
                 conn.commit()
             return True
-        except sqlite3.IntegrityError:
+        except DB_INTEGRITY_ERRORS:
             return False
 
     def get_document_by_hash(self, file_hash: str) -> Optional[Dict[str, Any]]:
         cursor = self._get_connection().cursor()
         cursor.execute("SELECT * FROM documents WHERE file_hash = ?", (file_hash,))
+        row = cursor.fetchone()
+        if row:
+            return {
+                "doc_id": row[0],
+                "filename": row[1],
+                "file_hash": row[2],
+                "file_type": row[3],
+                "uploaded_by": row[4],
+                "uploaded_at": row[5],
+            }
+        return None
+
+    def get_document_by_filename(self, filename: str, user_id: str) -> Optional[Dict[str, Any]]:
+        cursor = self._get_connection().cursor()
+        cursor.execute(
+            "SELECT doc_id, filename, file_hash, file_type, uploaded_by, uploaded_at FROM documents WHERE filename = ? AND uploaded_by = ? ORDER BY uploaded_at DESC LIMIT 1",
+            (filename, user_id),
+        )
         row = cursor.fetchone()
         if row:
             return {
@@ -382,6 +527,94 @@ class Database:
         ]
 
 
+    # ── Exposed Databases ──────────────────────────────────
+    def expose_database(self, db_config: dict, exposed_by: str) -> int:
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                sql = """INSERT INTO exposed_databases (db_type, host, port, db_user, password, database_name, path, label, exposed_by)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+                if self.is_postgres:
+                    sql += " RETURNING id"
+                cursor.execute(
+                    sql,
+                    (
+                        db_config["db_type"],
+                        db_config.get("host", ""),
+                        db_config.get("port", 0),
+                        db_config.get("db_user", db_config.get("user", "")),
+                        db_config.get("password", ""),
+                        db_config.get("database_name", ""),
+                        db_config.get("path", ""),
+                        db_config["label"],
+                        exposed_by,
+                    ),
+                )
+                if self.is_postgres:
+                    row = cursor.fetchone()
+                    db_id = row[0] if row else 0
+                else:
+                    db_id = cursor.lastrowid or 0
+                conn.commit()
+                return db_id
+        except Exception as e:
+            print(f"Error exposing database: {e}")
+            return 0
+
+    def get_exposed_databases(self) -> List[Dict[str, Any]]:
+        cursor = self._get_connection().cursor()
+        cursor.execute(
+            "SELECT id, db_type, host, port, database_name, path, label, exposed_by, created_at FROM exposed_databases ORDER BY created_at DESC"
+        )
+        return [
+            {
+                "id": row[0],
+                "db_type": row[1],
+                "host": row[2],
+                "port": row[3],
+                "database_name": row[4],
+                "path": row[5],
+                "label": row[6],
+                "exposed_by": row[7],
+                "created_at": row[8],
+            }
+            for row in cursor.fetchall()
+        ]
+
+    def get_exposed_database(self, db_id: int) -> Optional[Dict[str, Any]]:
+        cursor = self._get_connection().cursor()
+        cursor.execute(
+            "SELECT id, db_type, host, port, db_user, password, database_name, path, label, exposed_by, created_at FROM exposed_databases WHERE id = ?",
+            (db_id,),
+        )
+        row = cursor.fetchone()
+        if row:
+            return {
+                "id": row[0],
+                "db_type": row[1],
+                "host": row[2],
+                "port": row[3],
+                "user": row[4],
+                "password": row[5],
+                "database_name": row[6],
+                "path": row[7],
+                "label": row[8],
+                "exposed_by": row[9],
+                "created_at": row[10],
+            }
+        return None
+
+    def delete_exposed_database(self, db_id: int) -> bool:
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM exposed_databases WHERE id = ?", (db_id,))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            print(f"Error deleting exposed database: {e}")
+            return False
+
     # ── TCET Documents Index Management ────────────────────
     def get_tcet_doc_by_path(self, file_path: str) -> Optional[Dict[str, Any]]:
         cursor = self._get_connection().cursor()
@@ -411,14 +644,14 @@ class Database:
                 cursor.execute(
                     """INSERT INTO tcet_doc_index (file_name, file_path, file_hash, file_size)
                        VALUES (?, ?, ?, ?)
-                       ON CONFLICT(file_path) DO UPDATE SET
-                         file_name = excluded.file_name,
-                         file_hash = excluded.file_hash,
-                         file_size = excluded.file_size,
-                         indexed = CASE WHEN indexed = 1 AND excluded.file_hash != file_hash THEN 0 ELSE indexed END,
-                         doc_id = CASE WHEN excluded.file_hash != file_hash THEN NULL ELSE doc_id END,
-                         chunks_count = CASE WHEN excluded.file_hash != file_hash THEN 0 ELSE chunks_count END,
-                         indexed_at = CASE WHEN excluded.file_hash != file_hash THEN NULL ELSE indexed_at END""",
+                        ON CONFLICT(file_path) DO UPDATE SET
+                          file_name = excluded.file_name,
+                          file_hash = excluded.file_hash,
+                          file_size = excluded.file_size,
+                          indexed = CASE WHEN tcet_doc_index.indexed = 1 AND excluded.file_hash != tcet_doc_index.file_hash THEN 0 ELSE tcet_doc_index.indexed END,
+                          doc_id = CASE WHEN excluded.file_hash != tcet_doc_index.file_hash THEN NULL ELSE tcet_doc_index.doc_id END,
+                          chunks_count = CASE WHEN excluded.file_hash != tcet_doc_index.file_hash THEN 0 ELSE tcet_doc_index.chunks_count END,
+                          indexed_at = CASE WHEN excluded.file_hash != tcet_doc_index.file_hash THEN NULL ELSE tcet_doc_index.indexed_at END""",
                     (file_name, file_path, file_hash, file_size),
                 )
                 conn.commit()

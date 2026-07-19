@@ -1,10 +1,10 @@
 import base64
 import json
 from typing import Dict, Any, Optional
-from app.document_generation.generators.docx_generator import DOCXGenerator
+from app.document_generation.generators.docx_generator_v2 import DOCXGeneratorV2
 from app.document_generation.generators.pdf_generator import PDFGenerator
-from app.document_generation.generators.pptx_generator import PPTXGenerator
-from app.document_generation.generators.xlsx_generator import XLSXGenerator
+from app.document_generation.generators.pptx_generator_v2 import PPTXGeneratorV2
+from app.document_generation.generators.xlsx_generator_v2 import XLSXGeneratorV2
 
 
 class PreviewGenerator:
@@ -24,7 +24,7 @@ class PreviewGenerator:
 
     @staticmethod
     def _docx_preview(html: str, template: Optional[Dict] = None) -> Dict[str, Any]:
-        gen = DOCXGenerator()
+        gen = DOCXGeneratorV2()
         try:
             docx_bytes = gen.generate_preview(html, template)
             preview_html = _extract_text_from_docx_preview(docx_bytes)
@@ -61,7 +61,7 @@ class PreviewGenerator:
 
     @staticmethod
     def _pptx_preview(html: str, template: Optional[Dict] = None) -> Dict[str, Any]:
-        gen = PPTXGenerator()
+        gen = PPTXGeneratorV2()
         try:
             pngs = gen.generate_preview(html, template)
             images = []
@@ -81,7 +81,7 @@ class PreviewGenerator:
 
     @staticmethod
     def _xlsx_preview(html: str, template: Optional[Dict] = None) -> Dict[str, Any]:
-        gen = XLSXGenerator()
+        gen = XLSXGeneratorV2()
         try:
             preview_data = gen.generate_preview(html, template)
             return {

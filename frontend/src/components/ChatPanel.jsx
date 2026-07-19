@@ -20,6 +20,11 @@ function formatTime(iso) {
 }
 
 function Markdown({ content, isUser }) {
+  const cleanContent = (text) => {
+    if (!text) return "";
+    return text.replace(/\[PARSER_DATA:.*?\][\s\S]*?\[\/PARSER_DATA\]/g, "").trim();
+  };
+
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
@@ -37,7 +42,7 @@ function Markdown({ content, isUser }) {
         },
       }}
     >
-      {content}
+      {cleanContent(content)}
     </ReactMarkdown>
   );
 }
@@ -175,8 +180,10 @@ export default function ChatPanel({ sessionId, onSessionUpdate }) {
       attachedFileNames = [];
       for (const file of files) {
         try {
-          await uploadDocument(file);
-          attachedFileNames.push(file.name);
+          const res = await uploadDocument(file);
+          if (res.success) {
+            attachedFileNames.push(file.name);
+          }
         } catch {
           // silently skip failed uploads
         }

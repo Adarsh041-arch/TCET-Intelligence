@@ -5,7 +5,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from app.services.vector_store import vector_store
+from app.services.vector_store import vector_store, user_vector_store
 from app.services.llm import llm_service
 from app.services.embeddings import embedding_service
 from app.models.database import db

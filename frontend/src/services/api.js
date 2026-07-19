@@ -160,7 +160,11 @@ export async function uploadDocument(file) {
     body: formData,
   });
 
-  return res.json();
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.detail || 'Upload failed');
+  }
+  return data;
 }
 
 export async function deleteDocument(docId) {
@@ -204,6 +208,18 @@ export async function sqlQuery(query) {
     },
   });
   return res.json();
+}
+
+export async function sqlExposeDatabase(config) {
+  return request('/admin/sql/expose', { method: 'POST', body: config });
+}
+
+export async function getExposedDatabases() {
+  return request('/admin/sql/exposed');
+}
+
+export async function deleteExposedDatabase(dbId) {
+  return request(`/admin/sql/exposed/${dbId}`, { method: 'DELETE' });
 }
 
 // ── TCET Documents (Admin) ──────────────────────────────────

@@ -6,9 +6,10 @@ from app.core.config import config
 class EmbeddingService:
     def __init__(self):
         self.model_name = config.embedding_model
+        self.client = ollama.Client(host=config.ollama_base_url)
 
     def embed_text(self, text: str) -> List[float]:
-        response = ollama.embeddings(model=self.model_name, prompt=text)
+        response = self.client.embeddings(model=self.model_name, prompt=text)
         return response["embedding"]
 
     def embed_texts(self, texts: List[str]) -> List[List[float]]:

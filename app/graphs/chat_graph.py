@@ -1,6 +1,6 @@
 from typing import TypedDict, List, Dict, Any, Optional
 from langgraph.graph import StateGraph, END
-from app.services.vector_store import vector_store
+from app.services.vector_store import vector_store, user_vector_store
 from app.services.llm import llm_service
 from app.services.sql_connector import db_connector
 from app.models.database import db
@@ -155,9 +155,16 @@ class ChatAgent:
     def _retrieval_node(self, state: ChatState) -> ChatState:
         try:
             query = state["current_query"]
-            retrieved = vector_store.retrieve_similar(
-                query, top_k=config.top_k, threshold=config.similarity_threshold
+            user_id = state.get("user_id")
+            filter_dict = {"user_id": user_id} if user_id else None
+            retrieved = user_vector_store.retrieve_similar(
+                query, top_k=config.top_k, threshold=config.similarity_threshold,
+                filter_dict=filter_dict
             )
+            if not retrieved:
+                retrieved = vector_store.retrieve_similar(
+                    query, top_k=config.top_k, threshold=config.similarity_threshold
+                )
             state["retrieved_docs"] = retrieved
         except Exception as e:
             state["error"] = f"Retrieval error: {str(e)}"
@@ -166,6 +173,7 @@ class ChatAgent:
 
     def _sql_node(self, state: ChatState) -> ChatState:
         if not db_connector.current_connection:
+            state["error"] = "No database is connected. An admin must connect a database first."
             state["sql_result"] = None
             return state
 
@@ -185,15 +193,17 @@ class ChatAgent:
                     schema_parts.append(f"{table}: {cols}")
 
             table_info = "\n".join(schema_parts)
-            sql_query = llm_service.generate_sql_query(
-                state["current_query"], table_info
-            )
+            chat_history = state.get("chat_history", [])[-10:]  # Last 10 messages
 
-            if sql_query and not sql_query.startswith("Error"):
-                result = db_connector.execute_query(sql_query)
-                state["sql_result"] = result
+            # Plan → generate → execute → reason over errors → retry (capped)
+            outcome = llm_service.execute_sql_with_retry(
+                state["current_query"], table_info, db_connector, chat_history
+            )
+            if outcome.get("success"):
+                state["sql_result"] = outcome["result"]
             else:
-                state["sql_result"] = None
+                # Surface the final error so the response node reports it
+                state["sql_result"] = outcome.get("result") or None
         except Exception as e:
             print(f"SQL error: {e}")
             state["sql_result"] = None

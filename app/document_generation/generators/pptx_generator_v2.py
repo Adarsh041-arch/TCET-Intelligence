@@ -50,8 +50,47 @@ class PPTXGeneratorV2(BaseGenerator):
     def generate(self, html: str, template: Optional[Dict[str, Any]] = None, metadata: Optional[Dict[str, Any]] = None) -> bytes:
         return self._generate_v2(html, template, metadata)
 
-    def generate_preview(self, html: str, template: Optional[Dict[str, Any]] = None) -> bytes:
-        return self.generate(html, template)
+    def generate_preview(self, html: str, template: Optional[Dict[str, Any]] = None) -> list[bytes]:
+        try:
+            import tempfile
+            import os
+            pptx_bytes = self.generate(html, template)
+            pngs = []
+            with tempfile.NamedTemporaryFile(suffix=".pptx", delete=False) as tmp:
+                tmp.write(pptx_bytes)
+                tmp_path = tmp.name
+            try:
+                from PIL import Image
+                prs = Presentation(tmp_path)
+                for i, slide in enumerate(prs.slides):
+                    img = Image.new("RGB", (400, 225), (255, 255, 255))
+                    buf = io.BytesIO()
+                    img.save(buf, format="PNG")
+                    pngs.append(buf.getvalue())
+            finally:
+                os.unlink(tmp_path)
+            return pngs if pngs else [self._generate_placeholder_thumb()]
+        except ImportError:
+            return [self._generate_placeholder_thumb()]
+
+    def _generate_placeholder_thumb(self) -> bytes:
+        try:
+            from PIL import Image, ImageDraw
+            img = Image.new("RGB", (400, 225), (245, 245, 245))
+            draw = ImageDraw.Draw(img)
+            draw.text((150, 100), "Slide Preview", fill=(100, 100, 100))
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            return buf.getvalue()
+        except ImportError:
+            import struct
+            width, height = 400, 225
+            raw = b""
+            for y in range(height):
+                for x in range(width):
+                    raw += b"\xf5\xf5\xf5\xff"
+            raw = b"\x89PNG\r\n\x1a\n" + struct.pack(">I", 13) + b"IHDR" + struct.pack(">IIBB", width, height, 8, 6) + b"\x00\x00\x00\x00" + b"IDAT" + raw + b"\x00\x00\x00\x00IEND\xaeB`\x82"
+            return raw
 
     def _generate_v2(self, html: str, template: Optional[Dict] = None, metadata: Optional[Dict] = None) -> bytes:
         prs = Presentation()

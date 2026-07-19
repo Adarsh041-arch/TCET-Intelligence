@@ -17,7 +17,7 @@ from langchain_core.tools import tool
 from app.core.config import config
 from app.prompts.general import GENERAL_CHAT_PROMPT
 from app.services.llm import llm_service
-from app.services.vector_store import vector_store
+from app.services.vector_store import vector_store, user_vector_store
 
 logger = logging.getLogger(__name__)
 
@@ -50,10 +50,8 @@ def build_tools(modes: List[str], user_id: Optional[str] = None) -> list:
         async def search_tcet_docs(query: str) -> str:
             """Search TCET college documents (syllabus, attendance policy, fee structure, timetables, etc.) for information matching the query. Returns relevant document excerpts and their sources."""
             try:
-                filter_dict = {"source": "tcet_managed"}
                 docs = vector_store.retrieve_similar(
                     query, top_k=config.top_k, threshold=config.similarity_threshold,
-                    filter_dict=filter_dict,
                 )
                 if not docs:
                     return "No relevant documents found in the TCET document store."
@@ -69,6 +67,30 @@ def build_tools(modes: List[str], user_id: Optional[str] = None) -> list:
                 return f"Error searching TCET documents: {e}"
 
         tools.append(search_tcet_docs)
+
+        @tool
+        async def search_user_docs(query: str) -> str:
+            """Search user-uploaded documents for information matching the query. Returns relevant document excerpts and their sources."""
+            try:
+                filter_dict = {"user_id": user_id} if user_id else None
+                docs = user_vector_store.retrieve_similar(
+                    query, top_k=config.top_k, threshold=0.1,
+                    filter_dict=filter_dict
+                )
+                if not docs:
+                    return "No relevant documents found in your uploaded documents."
+                lines = []
+                for d in docs:
+                    content = d.get("content", "")[:500]
+                    filename = d.get("filename", "unknown")
+                    sim = d.get("similarity", 0)
+                    lines.append(f"[{filename}] (score={sim:.2f})\n{content}")
+                return "\n\n".join(lines)
+            except Exception as e:
+                logger.error(f"search_user_docs error: {e}", exc_info=True)
+                return f"Error searching user documents: {e}"
+
+        tools.append(search_user_docs)
 
     if "sql" in modes:
         @tool
@@ -106,11 +128,13 @@ def build_tools(modes: List[str], user_id: Optional[str] = None) -> list:
                     col_strs = [f"{c['name']} ({c['type']})" for c in cols]
                     schema_parts.append(f"{table}: {', '.join(col_strs)}")
                 table_info = "\n".join(schema_parts)
-                sql_query = llm_service.generate_sql_query(natural_language_query, table_info)
-                if not sql_query or sql_query.startswith("Error"):
-                    return f"Could not generate SQL query: {sql_query}"
-                sql_result = db_connector.execute_query(sql_query)
-                response = llm_service.generate_sql_response(natural_language_query, sql_result)
+                # Plan → generate → execute → reason over errors → retry (capped)
+                outcome = llm_service.execute_sql_with_retry(
+                    natural_language_query, table_info, db_connector, chat_history=None
+                )
+                if not outcome.get("success") and not outcome.get("result"):
+                    return f"Could not generate a valid SQL query after {outcome.get('iterations', 0)} attempts."
+                response = llm_service.generate_sql_response(natural_language_query, outcome["result"])
                 return response
             except Exception as e:
                 return f"Error executing database query: {e}"
@@ -239,6 +263,7 @@ def build_tools(modes: List[str], user_id: Optional[str] = None) -> list:
         from app.document_generation.storage.file_storage import file_storage
         from app.document_generation.registry import GeneratorRegistry
         from app.document_generation.templates.template_manager import template_manager
+        from app.document_generation.converters.markdown_converter import markdown_to_html
         from app.prompts.documentation import DOCUMENTATION_SYSTEM_PROMPT
         import uuid
 
@@ -253,29 +278,30 @@ def build_tools(modes: List[str], user_id: Optional[str] = None) -> list:
             """
             import re
             try:
-                from app.services.doc_agent import _detect_format
+                from app.services.doc_agent import _detect_format, _extract_markdown_from_response
                 fmt = _detect_format(description) or format
                 effective_fmt = fmt if fmt in ("docx", "pdf", "pptx", "xlsx") else "docx"
                 is_v2 = effective_fmt in V2_FORMATS
                 reg_fmt = f"{effective_fmt}-v2" if is_v2 else effective_fmt
-                markdown_content = llm_service.chat([
+                raw_response = llm_service.chat([
                     {"role": "system", "content": DOCUMENTATION_SYSTEM_PROMPT},
                     {"role": "user", "content": description},
                 ])
-                if markdown_content.startswith("```"):
-                    lines = markdown_content.split("\n")
-                    if lines[0].startswith("```"):
-                        lines = lines[1:]
-                    if lines and lines[-1].strip() == "```":
-                        lines = lines[:-1]
-                    markdown_content = "\n".join(lines).strip()
+                # Extract clean markdown from the LLM response,
+                # stripping conversational text and JSON action blocks
+                markdown_content = _extract_markdown_from_response(raw_response)
                 markdown_content = re.sub(r"<[^>]+>", "", markdown_content)
                 job_id = str(uuid.uuid4())
                 ext = f".{effective_fmt}"
                 filename = f"document_{job_id[:8]}{ext}"
                 gen = GeneratorRegistry.get(reg_fmt)
                 template = template_manager.get_template("default")
-                result = gen.generate(markdown_content, template, {})
+                # V2 generators parse markdown internally; PDF (v1) expects HTML
+                if is_v2:
+                    result = gen.generate(markdown_content, template, {})
+                else:
+                    html_content = markdown_to_html(markdown_content)
+                    result = gen.generate(html_content, template, {})
                 file_storage.store_file(result, filename, job_id)
                 download_url = file_storage.get_download_url(job_id, filename)
                 return f"{download_url}"
@@ -283,6 +309,68 @@ def build_tools(modes: List[str], user_id: Optional[str] = None) -> list:
                 return f"Error generating document: {e}"
 
         tools.append(generate_document)
+
+    # ── Memory tools (always available) ──
+    from app.prompts.memory import VALID_CATEGORIES
+
+    @tool
+    def read_memory(query: str, category: str = "") -> str:
+        """Search your stored memories about the user. Use this to recall personal information, preferences, and past conversations. Optionally filter by category."""
+        try:
+            from app.services.memory_store import memory_store as ms
+            cat = category if category else None
+            memories = ms.retrieve_memories(user_id, query, top_k=5, category=cat)
+            if not memories:
+                return "No relevant memories found."
+            lines = []
+            for m in memories:
+                meta = m.get("metadata", {})
+                cat_label = meta.get("category", "other")
+                conf = meta.get("confidence", 0)
+                lines.append(f"[{cat_label}] (confidence: {conf:.1f}) {m['fact']}")
+            return "Your memories:\n" + "\n".join(lines)
+        except Exception as e:
+            return f"Error reading memories: {e}"
+
+    @tool
+    def write_memory(fact: str, category: str = "other", confidence: float = 0.8) -> str:
+        """Store a new piece of information about the user in long-term memory. Use this when you learn personal details, preferences, or anything worth remembering across conversations."""
+        try:
+            from app.services.memory_store import memory_store as ms
+            if category not in VALID_CATEGORIES:
+                category = "other"
+            mem_id = ms.add_memory(user_id, fact, category, confidence)
+            return f"Stored: '{fact}' (category: {category}, confidence: {confidence:.1f})"
+        except Exception as e:
+            return f"Error writing memory: {e}"
+
+    @tool
+    def update_memory(memory_id: str, fact: str, category: str = "") -> str:
+        """Update an existing memory with new information. Provide the memory_id and the updated fact."""
+        try:
+            from app.services.memory_store import memory_store as ms
+            cat = category if category else None
+            if ms.update_memory(memory_id, fact, cat):
+                return f"Memory {memory_id} updated."
+            return f"Memory {memory_id} not found."
+        except Exception as e:
+            return f"Error updating memory: {e}"
+
+    @tool
+    def delete_memory(memory_id: str) -> str:
+        """Delete a memory by its ID."""
+        try:
+            from app.services.memory_store import memory_store as ms
+            if ms.delete_memory(memory_id):
+                return f"Memory {memory_id} deleted."
+            return f"Memory {memory_id} not found."
+        except Exception as e:
+            return f"Error deleting memory: {e}"
+
+    tools.append(read_memory)
+    tools.append(write_memory)
+    tools.append(update_memory)
+    tools.append(delete_memory)
 
     return tools
 
@@ -300,10 +388,16 @@ def build_system_prompt(modes: List[str]) -> str:
 
     tools_section = "\n".join(tool_descriptions)
 
+    from app.prompts.memory import MEMORY_INSTRUCTION
+    from app.prompts.general import SECURITY_INSTRUCTION
+
     prompt = f"""You are a multi-capability AI assistant with access to the following tools: {caps}.
 
 ## Available Capabilities
 {tools_section}
+
+## Memory System
+{MEMORY_INSTRUCTION.strip()}
 
 ## Instructions
 - You have access to multiple tools. Use them as needed to fulfill the user's request.
@@ -317,7 +411,10 @@ def build_system_prompt(modes: List[str]) -> str:
 - All filesystem operations are restricted to the user's allowed directories.
 - **When a tool returns a URL, include that URL exactly as returned — do not rewrite or construct your own URL.**
 
-For each major step, briefly announce what you're doing before calling the tool."""
+For each major step, briefly announce what you're doing before calling the tool.
+
+## Confidentiality
+{SECURITY_INSTRUCTION}"""
     return prompt.strip()
 
 

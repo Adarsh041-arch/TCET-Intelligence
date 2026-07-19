@@ -23,7 +23,7 @@ class PDFGenerator(BaseGenerator):
         styled_html = self._prepare_html(html, template)
         try:
             return self._generate_with_playwright(styled_html)
-        except ImportError:
+        except Exception:
             return self._generate_with_fpdf(styled_html)
 
     def generate_preview(self, html: str, template: Optional[Dict[str, Any]] = None) -> bytes:
@@ -77,18 +77,25 @@ class PDFGenerator(BaseGenerator):
 </html>"""
 
     def _generate_with_playwright(self, html: str) -> bytes:
-        from playwright.sync_api import sync_playwright
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-            page.set_content(html, wait_until="networkidle")
-            pdf_bytes = page.pdf(
-                format="A4",
-                margin={"top": "20mm", "bottom": "20mm", "left": "20mm", "right": "20mm"},
-                print_background=True,
-            )
-            browser.close()
-            return pdf_bytes
+        from concurrent.futures import ThreadPoolExecutor
+
+        def _run():
+            from playwright.sync_api import sync_playwright
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                page = browser.new_page()
+                page.set_content(html, wait_until="networkidle")
+                pdf_bytes = page.pdf(
+                    format="A4",
+                    margin={"top": "20mm", "bottom": "20mm", "left": "20mm", "right": "20mm"},
+                    print_background=True,
+                )
+                browser.close()
+                return pdf_bytes
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_run)
+            return future.result()
 
     def _generate_with_fpdf(self, html: str) -> bytes:
         import os

@@ -400,9 +400,11 @@ def api_upload_document(file):
             f"{API_BASE_URL}/admin/documents/upload",
             files=files,
             headers=get_headers(),
-            timeout=60,
+            timeout=120,
         )
         load_documents()
+        if response.status_code != 200:
+            return {"success": False, "message": response.json().get("detail", "Upload failed")}
         return response.json()
     except:
         return {"success": False, "message": "File processing timeout or connection failure."}

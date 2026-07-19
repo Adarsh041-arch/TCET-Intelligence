@@ -19,6 +19,10 @@ pip install --upgrade pip
 pip install -r requirements.txt
 
 echo.
+echo Installing Playwright browser...
+playwright install chromium
+
+echo.
 echo ========================================
 echo Installation Complete!
 echo ========================================

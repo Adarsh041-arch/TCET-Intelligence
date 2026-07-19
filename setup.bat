@@ -20,6 +20,12 @@ if errorlevel 1 (
     exit /b 1
 )
 
+echo Installing Playwright browser...
+playwright install chromium
+if errorlevel 1 (
+    echo Warning: Failed to install Playwright browser. PDF generation may fail.
+)
+
 echo [3/3] Downloading Ollama model...
 echo Please ensure Ollama is installed and running
 echo Run: ollama pull qwen2.5:3b

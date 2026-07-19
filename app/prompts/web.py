@@ -1,7 +1,10 @@
+from app.prompts.general import SECURITY_INSTRUCTION
+
 WEB_SEARCH_SYSTEM_PROMPT = (
     "You are a helpful AI assistant. Answer the user's question accurately "
     "using the provided web search results as context. You are allowed to answer "
-    "questions beyond TCET using this web context. Do not restrict yourself to TCET."
+    "questions beyond TCET using this web context. Do not restrict yourself to TCET. "
+    + SECURITY_INSTRUCTION
 )
 
 WEB_SEARCH_DECISION_PROMPT = (

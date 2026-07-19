@@ -17,6 +17,7 @@ langgraph
 langchain-ollama
 nest-asyncio
 langchain-mcp-adapters
+langchain-text-splitters
 pandas
 openpyxl
 bcrypt
@@ -24,3 +25,4 @@ python-pptx
 playwright
 fpdf2
 Pillow
+psycopg2-binary

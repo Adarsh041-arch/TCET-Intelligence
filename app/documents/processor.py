@@ -9,7 +9,7 @@ import PyPDF2
 import docx
 import pandas as pd
 from app.core.config import config
-from app.services.vector_store import vector_store
+from app.services.vector_store import vector_store, user_vector_store, compute_file_hash
 from app.models.database import db
 
 
@@ -23,16 +23,25 @@ class DocumentProcessor:
     def process_file(
         self, file_content: bytes, filename: str, user_id: str,
         extra_metadata: Optional[Dict[str, Any]] = None,
+        target_store: Optional[Any] = None,
+        force: bool = False,
     ) -> Dict[str, Any]:
-        file_hash = vector_store.compute_file_hash(file_content)
+        store = target_store or user_vector_store
+        # Hash incorporates user_id to ensure same file uploaded by different users has different hashes
+        file_hash = compute_file_hash(file_content + user_id.encode())
 
         existing_doc = db.get_document_by_hash(file_hash)
         if existing_doc:
-            return {
-                "success": False,
-                "message": "Document already exists",
-                "doc_id": existing_doc["doc_id"],
-            }
+            if not force:
+                return {
+                    "success": True,
+                    "message": "Document already exists",
+                    "doc_id": existing_doc["doc_id"],
+                    "filename": existing_doc["filename"],
+                }
+            else:
+                # Force re-indexing: clean up old document metadata and embeddings first
+                self.delete_document(existing_doc["doc_id"])
 
         doc_id = str(uuid.uuid4())
         file_ext = os.path.splitext(filename)[1].lower()
@@ -41,34 +50,72 @@ class DocumentProcessor:
         if not text:
             return {"success": False, "message": "Could not extract text from file"}
 
-        chunks = self._chunk_text(text)
-        if not chunks:
-            return {"success": False, "message": "No content to index"}
+        # Count pages if PDF
+        page_count = 0
+        if file_ext == ".pdf":
+            try:
+                import io
+                pdf_file = io.BytesIO(file_content)
+                reader = PyPDF2.PdfReader(pdf_file)
+                page_count = len(reader.pages)
+            except Exception as e:
+                print(f"Error counting PDF pages: {e}")
+        
+        estimated_tokens = int(len(text) / 4)
+        # We only skip vector store indexing for user-uploaded documents (user_vector_store).
+        # Core documents (vector_store) must always be indexed in the vector database.
+        is_user_store = (store == user_vector_store)
+        is_large = not is_user_store or (page_count > 30 or estimated_tokens > 30000)
 
-        metadatas = []
-        for i in range(len(chunks)):
-            meta = {
-                "doc_id": doc_id,
-                "filename": filename,
-                "chunk_index": i,
-                "total_chunks": len(chunks),
-            }
-            if extra_metadata:
-                meta.update(extra_metadata)
-            metadatas.append(meta)
+        # If it's a large file, compute embeddings and index it in the vector store
+        chunks_created = 0
+        if is_large:
+            chunks = self._chunk_text(text)
+            if not chunks:
+                return {"success": False, "message": "No content to index"}
+            chunks_created = len(chunks)
 
-        success = vector_store.add_documents(chunks, metadatas, doc_id)
+            metadatas = []
+            for i in range(len(chunks)):
+                meta = {
+                    "doc_id": doc_id,
+                    "filename": filename,
+                    "chunk_index": i,
+                    "total_chunks": len(chunks),
+                    "user_id": user_id,  # Keep user isolation in vector db
+                }
+                if extra_metadata:
+                    meta.update(extra_metadata)
+                metadatas.append(meta)
 
-        if success:
-            db.save_document(doc_id, filename, file_hash, file_ext, user_id)
-            return {
-                "success": True,
-                "doc_id": doc_id,
-                "filename": filename,
-                "chunks_created": len(chunks),
-            }
-        else:
-            return {"success": False, "message": "Failed to store embeddings"}
+            success = store.add_documents(chunks, metadatas, doc_id)
+            if not success:
+                return {"success": False, "message": "Failed to store embeddings"}
+
+        # Write sidecar files in the upload directory
+        txt_path = os.path.join(self.upload_dir, f"{doc_id}.txt")
+        meta_path = os.path.join(self.upload_dir, f"{doc_id}.json")
+        try:
+            with open(txt_path, "w", encoding="utf-8") as f:
+                f.write(text)
+            
+            import json
+            with open(meta_path, "w", encoding="utf-8") as f:
+                json.dump({
+                    "page_count": page_count,
+                    "estimated_tokens": estimated_tokens,
+                    "filename": filename
+                }, f)
+        except Exception as e:
+            print(f"Error writing sidecar files: {e}")
+
+        db.save_document(doc_id, filename, file_hash, file_ext, user_id)
+        return {
+            "success": True,
+            "doc_id": doc_id,
+            "filename": filename,
+            "chunks_created": chunks_created,
+        }
 
     def _extract_text(self, file_content: bytes, file_ext: str) -> Optional[str]:
         file_ext = file_ext.lower()
@@ -221,7 +268,20 @@ class DocumentProcessor:
         return [chunk.strip() for chunk in chunks if chunk.strip()]
 
     def delete_document(self, doc_id: str) -> bool:
+        user_vector_store.delete_document(doc_id)
         vector_store.delete_document(doc_id)
+        
+        # Delete sidecar files if they exist
+        txt_path = os.path.join(self.upload_dir, f"{doc_id}.txt")
+        meta_path = os.path.join(self.upload_dir, f"{doc_id}.json")
+        try:
+            if os.path.exists(txt_path):
+                os.remove(txt_path)
+            if os.path.exists(meta_path):
+                os.remove(meta_path)
+        except Exception as e:
+            print(f"Error deleting sidecar files: {e}")
+            
         return db.delete_document(doc_id)
 
 
